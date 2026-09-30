@@ -1,4 +1,5 @@
 import { pxTruncate } from '@evenrealities/pretext'
+import type { Station } from './asr/stations'
 import type { Journey, Leg, Stop } from './journey'
 
 export const TIME_W = 64
@@ -25,6 +26,9 @@ function direction(leg: Leg): string {
 export function listItem(j: Journey): string {
   return `${hhmm(j.departure)}→${hhmm(j.arrival)}  ${duration(j.departure, j.arrival)}  乗換${j.transfers}`
 }
+
+/** 駅を選ぶ画面の1行。同名・同音の駅を見分けられるよう都道府県と路線を添える。リストの項目は 64 文字まで。 */
+export const stationItem = (s: Station) => [...fit(`${s.name}（${s.pref} ${s.line}）`)].slice(0, 64).join('')
 
 export function currentLegIndex(j: Journey, now: Date): number {
   const i = j.legs.findIndex(l => l.to.time > now)

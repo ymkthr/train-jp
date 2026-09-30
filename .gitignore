@@ -3,3 +3,4 @@ dist
 *.ehpk
 .env*.local
 public/diag-model.bin
+public/kuromoji

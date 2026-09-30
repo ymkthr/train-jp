@@ -1,3 +1,5 @@
+import type { Station } from './asr/stations'
+
 const TRANSITOUS = 'https://api.transitous.org/api'
 const HEARTRAILS = 'https://express.heartrails.com/api/json'
 
@@ -39,15 +41,6 @@ async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${res.status} ${url}`)
   return res.json() as Promise<T>
-}
-
-export async function findStation(name: string): Promise<{ id: string; name: string }> {
-  const hits = await getJson<{ id: string; name: string; type: string }[]>(
-    `${TRANSITOUS}/v1/geocode?text=${encodeURIComponent(name)}&type=STOP&language=ja`,
-  )
-  const hit = hits.find(h => h.type === 'STOP')
-  if (!hit) throw new Error(`駅が見つかりません: ${name}`)
-  return hit
 }
 
 const bareName = (name: string) => name.replace(/\(.*\)$/, '')
@@ -94,18 +87,18 @@ async function toLeg(l: MotisLeg): Promise<Leg> {
   }
 }
 
-export async function searchJourneys(fromName: string, toName: string, at = new Date()): Promise<Journey[]> {
-  const [from, to] = await Promise.all([findStation(fromName), findStation(toName)])
+// 経路は駅の座標から引く。名前で geocode すると、同名の駅や表記の違う駅（西線16条 → 西線６条、松山 → 台湾の松山）を拾うことがある。
+export async function searchJourneys(from: Station, to: Station, at = new Date()): Promise<Journey[]> {
   const plan = await getJson<{ itineraries: MotisItinerary[] }>(
-    `${TRANSITOUS}/v5/plan?fromPlace=${encodeURIComponent(from.id)}&toPlace=${encodeURIComponent(to.id)}` +
+    `${TRANSITOUS}/v5/plan?fromPlace=${encodeURIComponent(`${from.lat},${from.lon}`)}&toPlace=${encodeURIComponent(`${to.lat},${to.lon}`)}` +
       `&time=${encodeURIComponent(at.toISOString())}&language=ja`,
   )
   return Promise.all(
     plan.itineraries.map(async it => {
       const legs = await Promise.all(it.legs.filter(l => l.mode !== 'WALK').map(toLeg))
       return {
-        from: bareName(from.name),
-        to: bareName(to.name),
+        from: from.name,
+        to: to.name,
         departure: legs[0]?.from.time ?? new Date(it.startTime),
         arrival: legs.at(-1)?.to.time ?? new Date(it.endTime),
         transfers: it.transfers,
