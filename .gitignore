@@ -1,0 +1,5 @@
+node_modules
+dist
+*.ehpk
+.env*.local
+public/diag-model.bin

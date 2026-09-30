@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+    <title>オフライン音声認識の診断</title>
+    <style>
+      body { margin: 0; background: #111; color: #fff; font: 15px/1.5 system-ui, sans-serif; }
+      main { padding: 20px; display: grid; gap: 12px; }
+      button { font: inherit; padding: 12px; border: 0; border-radius: 12px; background: #FEF991; color: #232323; font-weight: 600; }
+      pre { white-space: pre-wrap; word-break: break-all; background: #1A1A1A; padding: 12px; border-radius: 12px; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <button id="bundled">1. 同梱したダミーを読む</button>
+      <button id="host">2. Even側の保存領域に 16MB 書いて読む</button>
+      <button id="memory">3. メモリ上限を測る（落ちたら再度開く）</button>
+      <button id="copy">結果をコピー</button>
+      <pre id="out">診断中…</pre>
+    </main>
+    <script type="module" src="/src/diag.ts"></script>
+  </body>
+</html>
