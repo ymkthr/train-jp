@@ -6,9 +6,15 @@ export const TIME_W = 64
 export const BODY_W = 576 - TIME_W
 export const ROWS = 9
 export const LIST_W = 320
+// 一番幅の広い「07:47:47」が 85px。
+export const CLOCK_W = 90
+export const HEADER_W = 576 - CLOCK_W
 
 const hhmm = (d: Date) =>
   d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })
+
+export const clock = (d: Date) =>
+  d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Tokyo' })
 
 const minutes = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 60000)
 
@@ -70,7 +76,7 @@ export function overview(j: Journey): Columns {
     body.push(next ? `● ${leg.to.name} 乗換${minutes(leg.to.time, next.from.time)}分` : `◎ ${leg.to.name}`)
   })
   return {
-    header: fit(`${j.from} → ${j.to}  ${hhmm(j.departure)}–${hhmm(j.arrival)}  ${duration(j.departure, j.arrival)}  乗換${j.transfers}回`),
+    header: fit(`${j.from} → ${j.to}  ${hhmm(j.departure)}–${hhmm(j.arrival)}  ${duration(j.departure, j.arrival)}  乗換${j.transfers}回`, HEADER_W),
     times: times.slice(0, ROWS).join('\n'),
     body: body.slice(0, ROWS).map(l => fit(l, BODY_W)).join('\n'),
   }
@@ -83,7 +89,7 @@ export function stops(j: Journey, now: Date): Columns {
   const start = Math.max(0, Math.min(nextIdx, all.length - ROWS))
   const shown = all.slice(start, start + ROWS)
   return {
-    header: fit(`${direction(leg)}  ${leg.to.name}まで あと${all.length - nextIdx}駅`),
+    header: fit(`${direction(leg)}  ${leg.to.name}まで あと${all.length - nextIdx}駅`, HEADER_W),
     times: shown.map(s => hhmm(s.time)).join('\n'),
     body: shown
       .map((s, k) => fit(`${start + k === nextIdx ? '▶' : '  '} ${s.name}${start + k === all.length - 1 && j.legs.at(-1) !== leg ? '  乗換' : ''}`, BODY_W))

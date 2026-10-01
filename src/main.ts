@@ -12,7 +12,7 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import { resolveStation, type Candidates, type Station } from './asr/stations'
 import { searchJourneys, type Journey, type JourneyPage } from './journey'
-import { BODY_W, LIST_W, TIME_W, journeyItems, overview, route, searching, stationItem, stops, strip, type Columns } from './screens'
+import { BODY_W, CLOCK_W, HEADER_W, LIST_W, TIME_W, clock, journeyItems, overview, route, searching, stationItem, stops, strip, type Columns } from './screens'
 
 type Route = { from: Candidates; to: Candidates }
 
@@ -45,12 +45,13 @@ const text = (id: number, name: string, content: string, box: [number, number, n
 const HEADER_H = 30
 const COL_Y = HEADER_H
 const COL_H = 288 - HEADER_H
+const CLOCK_ID = 4
 
 function columnsPage(c: Columns) {
   return {
     containerTotalNum: 3,
     textObject: [
-      text(1, 'header', c.header, [0, 0, 576, HEADER_H]),
+      text(1, 'header', c.header, [0, 0, HEADER_W, HEADER_H]),
       text(2, 'times', c.times, [0, COL_Y, TIME_W, COL_H]),
       text(3, 'body', c.body, [TIME_W, COL_Y, BODY_W, COL_H], 1),
     ],
@@ -68,7 +69,7 @@ const list = (id: number, name: string, items: string[], y = 0, width = 576) =>
 function page(s: Screen, now: Date) {
   switch (s.kind) {
     case 'idle':
-      return { containerTotalNum: 1, textObject: [text(1, 'msg', s.message, [0, 0, 576, 288], 1)] }
+      return { containerTotalNum: 1, textObject: [text(1, 'msg', s.message, [0, HEADER_H, 576, 288 - HEADER_H], 1)] }
     case 'searching':
       // 画像コンテナは入力を受けられないので、全面の空の文字コンテナに受けさせる。
       return {
@@ -84,7 +85,7 @@ function page(s: Screen, now: Date) {
     case 'pick':
       return {
         containerTotalNum: 2,
-        textObject: [text(1, 'title', s.side === 'from' ? '出発駅を選択' : '到着駅を選択', [0, 0, 576, HEADER_H])],
+        textObject: [text(1, 'title', s.side === 'from' ? '出発駅を選択' : '到着駅を選択', [0, 0, HEADER_W, HEADER_H])],
         listObject: [list(2, 'stations', s.route[s.side].stations.map(stationItem), HEADER_H)],
       }
     case 'list':
@@ -103,30 +104,54 @@ function page(s: Screen, now: Date) {
 }
 
 let started = false
+/** グラスに今出ている文字。差分だけ送るために持つ。 */
+const sent = new Map<number, string>()
 async function show(next: Screen) {
   screen = next
-  const p = page(next, new Date())
-  if (started) await bridge.rebuildPageContainer(new RebuildPageContainer(p))
+  const now = new Date()
+  const p = page(next, now)
+  const textObject = [...p.textObject, text(CLOCK_ID, 'clock', clock(now), [HEADER_W, 0, CLOCK_W, HEADER_H])]
+  const full = { ...p, containerTotalNum: p.containerTotalNum + 1, textObject }
+  sent.clear()
+  for (const t of textObject) sent.set(t.containerID!, t.content!)
+  if (started) await bridge.rebuildPageContainer(new RebuildPageContainer(full))
   else {
     started = true
-    await bridge.createStartUpPageContainer(new CreateStartUpPageContainer(p))
+    await bridge.createStartUpPageContainer(new CreateStartUpPageContainer(full))
   }
   if (next.kind === 'searching') await bridge.updateImageRawData(new ImageRawDataUpdate({ containerID: 3, containerName: 'train', imageData: TRAIN }))
 }
 
-// 時刻が進むと「あと N 分」と現在の駅が変わるので、レイアウトは保ったまま文字だけ差し替える。
-async function refresh() {
-  const now = new Date()
-  const updates =
-    screen.kind === 'strip' ? [[1, 'strip', strip(screen.journey, now)]]
-    : screen.kind === 'stops' ? Object.entries(stops(screen.journey, now)).map(([k, v], i) => [i + 1, k, v])
-    : screen.kind === 'searching' ? [[2, 'searching', searching(screen.from, screen.to, Math.round((now.getTime() - screen.since) / 1000))]]
-    : []
-  for (const [containerID, containerName, content] of updates as [number, string, string][]) {
-    await bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID, containerName, content }))
+// 時計・「あと N 分」・現在の駅・検索の秒数は時刻で変わるので、レイアウトは保ったまま文字だけ差し替える。
+function live(s: Screen, now: Date): [number, string, string][] {
+  const time: [number, string, string] = [CLOCK_ID, 'clock', clock(now)]
+  switch (s.kind) {
+    case 'strip':
+      return [time, [1, 'strip', strip(s.journey, now)]]
+    case 'stops':
+      return [time, ...Object.entries(stops(s.journey, now)).map(([k, v], i): [number, string, string] => [i + 1, k, v])]
+    case 'searching':
+      return [time, [2, 'searching', searching(s.from, s.to, Math.round((now.getTime() - s.since) / 1000))]]
+    default:
+      return [time]
   }
 }
-setInterval(refresh, 20_000)
+
+// 秒の変わり目に合わせる。転送が 1 秒を超えても重ならないよう、送り終えてから次を予約する。
+async function tick() {
+  const s = screen
+  try {
+    for (const [containerID, containerName, content] of live(s, new Date())) {
+      // 送っている間に画面が組み直されたら、古い画面の文字を新しい画面に書かない。
+      if (s !== screen) break
+      if (sent.get(containerID) === content) continue
+      sent.set(containerID, content)
+      await bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID, containerName, content }))
+    }
+  } finally {
+    setTimeout(tick, 1000 - (Date.now() % 1000))
+  }
+}
 
 // CLICK_EVENT は 0 なので protobuf 上は省略され、eventType が undefined で届く。
 const typeOf = (e?: { eventType?: OsEventTypeList }) => (e ? (e.eventType ?? OsEventTypeList.CLICK_EVENT) : null)
@@ -176,7 +201,6 @@ async function search(from: Station, to: Station, cursor?: string) {
   status.textContent = '検索中…'
   // 画像の転送を待たずに検索を始める。結果の画面に切り替えるのは転送が終わってから。
   const shown = show({ kind: 'searching', from, to, since: Date.now() })
-  const ticking = setInterval(refresh, 1000)
   try {
     const page = await searchJourneys(from, to, cursor)
     if (!page.journeys.length) throw new Error('経路が見つかりません')
@@ -186,12 +210,11 @@ async function search(from: Station, to: Station, cursor?: string) {
   } catch (err) {
     await shown
     await fail(err)
-  } finally {
-    clearInterval(ticking)
   }
 }
 
 await show(screen)
+tick()
 
 form.addEventListener('submit', async e => {
   e.preventDefault()
