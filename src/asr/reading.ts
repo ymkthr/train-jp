@@ -32,7 +32,10 @@ async function dictFile(name: string): Promise<ArrayBuffer> {
 
 async function loadTokenizer(): Promise<Tokenizer> {
   const names = ['base', 'check', 'tid', 'tid_pos', 'tid_map', 'cc', 'unk', 'unk_pos', 'unk_map', 'unk_char', 'unk_compat', 'unk_invoke']
-  const [base, check, tid, tidPos, tidMap, cc, unk, unkPos, unkMap, unkChar, unkCompat, unkInvoke] = await Promise.all(names.map(dictFile))
+  // 1つずつ読む。シミュレータの WebKit では 12 本を同時に fetch すると、先の 3 本の後がすべて「Load failed」になった（1つずつなら読める）。
+  const files: ArrayBuffer[] = []
+  for (const n of names) files.push(await dictFile(n))
+  const [base, check, tid, tidPos, tidMap, cc, unk, unkPos, unkMap, unkChar, unkCompat, unkInvoke] = files
   // 型付き配列の種類は kuromoji の src/loader/DictionaryLoader.js に合わせる。
   const dic = new DynamicDictionaries()
   dic.loadTrie(new Int32Array(base), new Int32Array(check))
@@ -46,9 +49,18 @@ async function loadTokenizer(): Promise<Tokenizer> {
 
 let tokenizer: Promise<Tokenizer> | undefined
 
-/** 辞書は初めて呼んだときに読む（数百 ms）。読みの無い語（英字など）は、英字を読みのカタカナにしてそのまま使う。 */
+/**
+ * 辞書を読む（数百 ms）。2回目からは読んだものを返す。音声の途中経過から駅を引き始める前に読んでおくと、最初の1回を待たせない。
+ * 読めなかったら覚えずに、次に呼ばれたときに読み直す。
+ */
+export const loadReading = () =>
+  (tokenizer ??= loadTokenizer().catch(err => {
+    tokenizer = undefined
+    throw err
+  }))
+
+/** 読みの無い語（英字など）は、英字を読みのカタカナにしてそのまま使う。 */
 export async function reading(text: string): Promise<string> {
-  tokenizer ??= loadTokenizer()
-  const tokens = (await tokenizer).tokenize(text)
+  const tokens = (await loadReading()).tokenize(text)
   return hiragana(tokens.map(t => t.reading ?? t.surface_form.replace(/[A-Za-z]/g, c => LETTERS[c.toUpperCase()])).join(''))
 }

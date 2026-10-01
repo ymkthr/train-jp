@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# public/sherpa/norikae-asr.{js,wasm} を作る。
+# wasm/asr.{js,wasm} を作る。
 # Even App の WebView は crossOriginIsolated にならず SharedArrayBuffer が無いので、pthread なし・SIMD ありで作る。
-# 使い方: npm run build:sherpa   （作業場所は WORK、既定は /tmp/norikae-sherpa-build。git と cmake と make が要る）
+# 使い方: npm run build:wasm -w even-g2-asr   （作業場所は WORK、既定は /tmp/even-g2-asr-build。git と cmake と make が要る）
 set -euo pipefail
 
 SHERPA_ONNX_VERSION=v1.13.8
 EMSDK_VERSION=4.0.23 # sherpa-onnx の build-wasm-simd-*.sh が動作確認している版
-WORK=${WORK:-/tmp/norikae-sherpa-build}
+WORK=${WORK:-/tmp/even-g2-asr-build}
 HERE=$(cd "$(dirname "$0")" && pwd)
-OUT=$HERE/../public/sherpa
+OUT=$HERE
 
 mkdir -p "$WORK" "$OUT"
 [ -d "$WORK/emsdk" ] || git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$WORK/emsdk"
@@ -43,13 +43,13 @@ emcmake cmake -S "$WORK/sherpa-onnx" -B "$WORK/build" \
 cmake --build "$WORK/build" --target sherpa-onnx-c-api -j"$(nproc)"
 
 # 静的ライブラリは wasm-ld が順序に関係なく解決する。
-emcc -O3 -msimd128 "$HERE/norikae-asr.c" -I"$WORK/sherpa-onnx" \
+emcc -O3 -msimd128 "$HERE/asr.c" -I"$WORK/sherpa-onnx" \
   "$WORK"/build/lib/*.a "$WORK"/build/_deps/onnxruntime-src/lib/*.a \
-  -o "$OUT/norikae-asr.js" \
+  -o "$OUT/asr.js" \
   -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createSherpaModule -sENVIRONMENT=web,worker \
   -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=1920MB -sSTACK_SIZE=10MB \
   -sFORCE_FILESYSTEM=1 \
-  -sEXPORTED_FUNCTIONS=_norikae_create,_norikae_recognize,_malloc,_free \
+  -sEXPORTED_FUNCTIONS=_asr_create,_asr_recognize,_malloc,_free \
   -sEXPORTED_RUNTIME_METHODS=FS,HEAPU8,HEAPF32,UTF8ToString,stringToNewUTF8
 
-ls -l "$OUT"
+ls -l "$OUT"/asr.js "$OUT"/asr.wasm

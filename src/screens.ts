@@ -1,5 +1,5 @@
-import { getTextWidth, pxTruncate } from '@evenrealities/pretext'
-import type { Station } from './asr/stations'
+import { getTextWidth, measureTextWrap, pxTruncate } from '@evenrealities/pretext'
+import type { Candidates, Station } from './asr/stations'
 import type { Journey, Leg, Stop } from './journey'
 
 export const TIME_W = 64
@@ -47,6 +47,37 @@ const centered = (line: string) => ' '.repeat(Math.max(0, Math.round((576 - getT
 /** 検索中の画面の文字。秒数が進むことで、固まっていないことを伝える。 */
 export const searching = (from: Station, to: Station, seconds: number) =>
   [`${from.name} → ${to.name}`, `経路を検索中  ${seconds}秒`].map(l => centered(fit(l))).join('\n')
+
+const BLOCKS = '▁▂▃▄▅▆▇█'
+export const LEVEL_BARS = 8
+
+/** 声の大きさ（RMS、古い順）の棒。-50dB〜-10dB を8段にする。届いた数が足りないうちは低い段で埋めて、幅を変えない。 */
+export const levelBar = (levels: number[]) =>
+  [...Array(Math.max(0, LEVEL_BARS - levels.length)).fill(0), ...levels.slice(-LEVEL_BARS)]
+    .map(rms => BLOCKS[Math.max(0, Math.min(7, Math.round(((20 * Math.log10(Math.max(rms, 1e-5)) + 50) / 40) * 7)))])
+    .join('')
+
+/** lines 行に収まらない文字は、頭を「…」にして終わりの方を見せる。話している途中の文字は終わりが新しいので。 */
+export function lastLines(text: string, lines: number, width = 576): string {
+  const fits = (s: string) => measureTextWrap(s, width - 4).lineCount <= lines
+  if (fits(text)) return text
+  let lo = 1
+  let hi = text.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (fits(`…${text.slice(mid)}`)) hi = mid
+    else lo = mid + 1
+  }
+  return `…${text.slice(lo)}`
+}
+
+// 駅が1つに決まっていなければ、後で選ばせることが分かるよう「？」を付ける。
+const pickName = (c: Candidates) => `${c.stations[0].name}${c.sure && c.stations.length === 1 ? '' : '？'}`
+
+/** 音声の途中経過や確定した文字から引けた駅。スマホにはこのまま、グラスには heardRoute で中央に寄せて出す。 */
+export const routeLabel = (from: Candidates, to: Candidates) => `${pickName(from)} → ${pickName(to)}`
+
+export const heardRoute = (from: Candidates, to: Candidates) => centered(fit(routeLabel(from, to)))
 
 export function currentLegIndex(j: Journey, now: Date): number {
   const i = j.legs.findIndex(l => l.to.time > now)

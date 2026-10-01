@@ -11,27 +11,50 @@ import {
   OsEventTypeList,
   AppLocationAccuracy,
 } from '@evenrealities/even_hub_sdk'
-import { resolveStation, type Candidates, type Station } from './asr/stations'
+import { REAZONSPEECH_K2_V2, createRecognizer, evenStore, loadModel, transcribe, type Recognizer, type Transcription } from 'even-g2-asr'
+import { loadReading } from './asr/reading'
+import { STATIONS, resolveRoute, resolveStation, type Candidates, type Station } from './asr/stations'
 import { searchJourneys, type Journey, type JourneyPage } from './journey'
 import { ON_TIME, expected, observe, type Lag } from './progress'
-import { BODY_W, CLOCK_W, HEADER_W, LIST_W, NOTICE_BORDER, NOTICE_H, NOTICE_MS, NOTICE_PAD, NOTICE_W, TIME_W, alighting, clock, journeyItems, notice, overview, route, searching, stationItem, stops, strip, type Columns } from './screens'
+import { BODY_W, CLOCK_W, HEADER_W, LEVEL_BARS, LIST_W, NOTICE_BORDER, NOTICE_H, NOTICE_MS, NOTICE_PAD, NOTICE_W, TIME_W, alighting, clock, heardRoute, journeyItems, lastLines, levelBar, notice, overview, route, routeLabel, searching, stationItem, stops, strip, type Columns } from './screens'
 
 type Route = { from: Candidates; to: Candidates }
 
 type List = { kind: 'list'; from: Station; to: Station } & JourneyPage
 
+/**
+ * 音声入力の画面。声の大きさと途中経過が届くたびに書き換え、画面は組み直さずに文字だけを差し替える。
+ * listening は録音中、finishing は録音が止まって確定を待つ間、heard は確定した文字を見せている間。
+ */
+type Voice = {
+  kind: 'voice'
+  transcription: Promise<Transcription>
+  phase: 'listening' | 'finishing' | 'heard'
+  /** 届いた音声の区間（約 0.1 秒）ごとの RMS。新しいものが後ろで、棒に出す分だけ持つ。 */
+  levels: number[]
+  text: string
+  route: Route | null
+}
+
 type Screen =
-  | { kind: 'idle'; message: string }
+  | { kind: 'idle'; message?: string }
+  | Voice
   | { kind: 'searching'; from: Station; to: Station; since: number }
   | { kind: 'pick'; side: 'from' | 'to'; route: Route }
   | List
   | { kind: 'strip' | 'overview' | 'stops'; journey: Journey; list: List }
 
+/** 音声認識の準備の進み具合。モデルの復元・ダウンロードと認識器の作成は起動時に裏で進める。 */
+type Asr =
+  | { kind: 'loading'; step: 'restore' | 'download' | 'create'; percent: number }
+  | { kind: 'ready'; recognizer: Recognizer }
+  | { kind: 'failed'; reason: string }
+
 const NEXT_ON_TAP = { overview: 'strip', strip: 'stops', stops: 'overview' } as const
-const WAITING = 'スマホで出発駅と到着駅を入力'
 
 const bridge = await waitForEvenAppBridge()
-let screen: Screen = { kind: 'idle', message: WAITING }
+let screen: Screen = { kind: 'idle' }
+let asr: Asr = { kind: 'loading', step: 'restore', percent: 0 }
 let lag: Lag = ON_TIME
 /** 最後に知らせた区間と、その知らせを閉じる時刻。区間ごとに1回だけ出す。 */
 let noticed = { leg: -1, until: 0 }
@@ -81,10 +104,54 @@ const list = (id: number, name: string, items: string[], y = 0, width = 576) =>
     itemContainer: new ListItemContainerProperty({ itemCount: items.length, itemWidth: 0, isItemSelectBorderEn: 1, itemName: items }),
   })
 
+const voiceStatus = () =>
+  asr.kind === 'failed'
+    ? `音声認識を使えません（${asr.reason}）`
+    : asr.kind === 'loading'
+      ? `音声認識を準備中${asr.step === 'create' ? '' : ` ${asr.percent}%`}${asr.step === 'download' ? '（初回のみダウンロード）' : ''}`
+      : null
+
+/** 待ち受けの文字。音声認識の準備が進むと変わるので、時計と一緒に書き換える。 */
+const idleText = (message?: string) =>
+  [message, voiceStatus() ?? 'タップして「東京から箱根湯本まで」と話す', 'スマホで入力しても探せます'].filter(Boolean).join('\n')
+
+const MSG_BOX: [number, number, number, number] = [0, HEADER_H, 576, 288 - HEADER_H]
+
+// 1行は 27px。4行で全角 28 字ずつ、約 110 字まで見せる。
+const VOICE_LINES = 4
+const VOICE_TEXT_BOX: [number, number, number, number] = [0, HEADER_H + 10, 576, VOICE_LINES * 27]
+const VOICE_ROUTE_BOX: [number, number, number, number] = [0, VOICE_TEXT_BOX[1] + VOICE_TEXT_BOX[3] + 14, 576, 30]
+const VOICE_HINT_BOX: [number, number, number, number] = [0, 288 - 30, 576, 30]
+// 5 と 6 は降りる駅の知らせの容器。tick は 5 があるかで知らせを出しているかを見分けるので、使わない。
+const VOICE_HINT_ID = 7
+const VOICE_HEAD = { finishing: '文字にしています…', heard: '聞き取りました' }
+
+/** 音声入力の画面の文字。容器の ID と名前と中身。 */
+function voiceTexts(v: Voice): [number, string, string][] {
+  return [
+    [1, 'head', v.phase === 'listening' ? `${levelBar(v.levels)}  聞いています` : VOICE_HEAD[v.phase]],
+    [2, 'heard', lastLines(v.text, VOICE_LINES) || ' '],
+    [3, 'route', v.route ? heardRoute(v.route.from, v.route.to) : ' '],
+    [VOICE_HINT_ID, 'hint', v.phase === 'listening' ? 'タップで終了　ダブルタップで取り消し' : ' '],
+  ]
+}
+
 function page(s: Screen, now: Date) {
   switch (s.kind) {
     case 'idle':
-      return { containerTotalNum: 1, textObject: [text(1, 'msg', s.message, [0, HEADER_H, 576, 288 - HEADER_H], 1)] }
+      return { containerTotalNum: 1, textObject: [text(1, 'msg', idleText(s.message), MSG_BOX, 1)] }
+    case 'voice': {
+      const [head, heard, found, hint] = voiceTexts(s)
+      return {
+        containerTotalNum: 4,
+        textObject: [
+          text(...head, [0, 0, HEADER_W, HEADER_H]),
+          text(...heard, VOICE_TEXT_BOX, 1),
+          text(...found, VOICE_ROUTE_BOX),
+          new TextContainerProperty({ ...text(...hint, VOICE_HINT_BOX), textColor: DIM }),
+        ],
+      }
+    }
     case 'searching':
       // 画像コンテナは入力を受けられないので、全面の空の文字コンテナに受けさせる。
       return {
@@ -158,34 +225,49 @@ function live(s: Screen, now: Date): [number, string, string][] {
       return [time, ...Object.entries(stops(expected(s.journey, lag), now)).map(([k, v], i): [number, string, string] => [i + 1, k, v])]
     case 'searching':
       return [time, [2, 'searching', searching(s.from, s.to, Math.round((now.getTime() - s.since) / 1000))]]
+    case 'idle':
+      return [time, [1, 'msg', idleText(s.message)]]
+    case 'voice':
+      return [time, ...voiceTexts(s)]
     default:
       return [time]
   }
 }
 
-// 秒の変わり目に合わせる。転送が 1 秒を超えても重ならないよう、送り終えてから次を予約する。
-async function tick() {
+/** 時刻や声で変わる文字をグラスに送る。tick と hear の両方から呼ぶので、前の呼び出しが送り終えてから始める。 */
+let pushing = Promise.resolve()
+const push = () => (pushing = pushing.then(update, update))
+
+async function update() {
   const s = screen
+  const now = new Date()
+  if ('journey' in s) {
+    const leg = alighting(expected(s.journey, lag), now)
+    if (leg !== null && leg !== noticed.leg) noticed = { leg, until: now.getTime() + NOTICE_MS }
+  }
+  // 帯は出し始めと閉じる時に容器が変わるので、画面を組み直す。
+  const banner = noticeText(s, now)
+  if ((banner !== null) !== sent.has(NOTICE_ID)) return await show(s)
+  const updates: [number, string, string][] =
+    banner === null ? live(s, now) : [[CLOCK_ID, 'clock', clock(now)], [NOTICE_ID, 'notice', banner.body], [CLOSING_ID, 'closing', banner.closing]]
+  for (const [containerID, containerName, content] of updates) {
+    // 送っている間に画面が組み直されたら、古い画面の文字を新しい画面に書かない。
+    if (s !== screen) break
+    if (sent.get(containerID) === content) continue
+    sent.set(containerID, content)
+    await bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID, containerName, content }))
+  }
+}
+
+// 声の棒と途中経過は 0.3 秒ごとに送る。BLE で無理なく送れる間隔で、途中経過が届いてから出るまでの待ちもこの程度に収まる。
+const VOICE_TICK_MS = 300
+
+// ふだんは秒の変わり目に合わせる。転送が間隔を超えても重ならないよう、送り終えてから次を予約する。
+async function tick() {
   try {
-    const now = new Date()
-    if ('journey' in s) {
-      const leg = alighting(expected(s.journey, lag), now)
-      if (leg !== null && leg !== noticed.leg) noticed = { leg, until: now.getTime() + NOTICE_MS }
-    }
-    // 帯は出し始めと閉じる時に容器が変わるので、画面を組み直す。
-    const banner = noticeText(s, now)
-    if ((banner !== null) !== sent.has(NOTICE_ID)) return await show(s)
-    const updates: [number, string, string][] =
-      banner === null ? live(s, now) : [[CLOCK_ID, 'clock', clock(now)], [NOTICE_ID, 'notice', banner.body], [CLOSING_ID, 'closing', banner.closing]]
-    for (const [containerID, containerName, content] of updates) {
-      // 送っている間に画面が組み直されたら、古い画面の文字を新しい画面に書かない。
-      if (s !== screen) break
-      if (sent.get(containerID) === content) continue
-      sent.set(containerID, content)
-      await bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID, containerName, content }))
-    }
+    await push()
   } finally {
-    setTimeout(tick, 1000 - (Date.now() % 1000))
+    setTimeout(tick, screen.kind === 'voice' ? VOICE_TICK_MS : 1000 - (Date.now() % 1000))
   }
 }
 
@@ -195,14 +277,21 @@ const typeOf = (e?: { eventType?: OsEventTypeList }) => (e ? (e.eventType ?? OsE
 bridge.onEvenHubEvent(event => {
   const types = [typeOf(event.sysEvent), typeOf(event.textEvent), typeOf(event.listEvent)]
   if (types.includes(OsEventTypeList.DOUBLE_CLICK_EVENT)) {
-    if (screen.kind === 'pick') show({ kind: 'idle', message: WAITING })
+    if (screen.kind === 'pick') show({ kind: 'idle' })
+    else if (screen.kind === 'voice') screen.transcription.then(t => t.cancel(), () => {})
     else if (screen.kind === 'list' || screen.kind === 'idle' || screen.kind === 'searching') bridge.shutDownPageContainer(1)
-    else show(screen.list)
+    else if ('journey' in screen) show(screen.list)
     return
   }
   if (!types.includes(OsEventTypeList.CLICK_EVENT)) return
   const index = event.listEvent?.currentSelectItemIndex ?? 0
-  if (screen.kind === 'pick') {
+  if (screen.kind === 'idle') {
+    if (asr.kind === 'ready') hear(asr.recognizer)
+    else show({ kind: 'idle', message: asr.kind === 'failed' ? 'スマホで入力してください' : '音声認識の準備ができるまでお待ちください' })
+  } else if (screen.kind === 'voice') {
+    if (screen.phase === 'listening') screen.phase = 'finishing'
+    screen.transcription.then(t => t.stop(), () => {})
+  } else if (screen.kind === 'pick') {
     const station = screen.route[screen.side].stations[index]
     if (station) go({ ...screen.route, [screen.side]: { stations: [station], sure: true } })
   } else if (screen.kind === 'list') {
@@ -216,7 +305,7 @@ bridge.onEvenHubEvent(event => {
       bridge.startAppLocationUpdates({ accuracy: AppLocationAccuracy.High, intervalMs: 5000 }).catch(() => {})
       show({ kind: 'overview', journey: screen.journeys[index - 1], list: screen })
     }
-  } else if (screen.kind !== 'idle' && screen.kind !== 'searching') {
+  } else if ('journey' in screen) {
     show({ ...screen, kind: NEXT_ON_TAP[screen.kind] })
   }
 })
@@ -227,6 +316,112 @@ bridge.onAppLocationChanged(fix => {
 
 const form = document.querySelector<HTMLFormElement>('#search')!
 const status = document.querySelector<HTMLParagraphElement>('#status')!
+const voice = document.querySelector<HTMLParagraphElement>('#voice')!
+const heardText = document.querySelector<HTMLParagraphElement>('#heard')!
+
+// TypeScript は await を挟んでも screen の絞り込みを保つので、比べるたびに今の値を読み直す。
+const showing = (s: Screen) => screen === s
+
+/** 確定した文字と引けた駅を、検索や駅の選択に進む前にグラスに出しておく長さ。 */
+const HEARD_MS = 500
+
+// スマホの画面にも、グラスと同じ途中経過と引けた駅を出す。
+const mirror = (v: Voice) => {
+  heardText.textContent = [v.text, v.route && routeLabel(v.route.from, v.route.to)].filter(Boolean).join('\n')
+}
+
+/**
+ * 録音しながら途中経過をグラスとスマホに出し、確定した文字から駅が引ければ go に渡す。
+ * 録音中・認識中にスマホから検索されたら画面はそちらに移っているので、この後は何もしない。
+ * 録音は無音が続いても止まるので、タップでの終了を待たずに確定へ進むことがある。
+ */
+async function hear(recognizer: Recognizer) {
+  // 途中経過から駅を引くのは、引いている間に変わった文字のうち最後のものだけ。resolveRoute は 20〜60ms かかるので、毎回は引かない。
+  let resolving = false
+  let resolved = ''
+  const preview = async () => {
+    if (resolving) return
+    resolving = true
+    try {
+      while (resolved !== voiceInput.text) {
+        const t = voiceInput.text
+        const r = await resolveRoute(t)
+        if (voiceInput.phase === 'heard') return
+        voiceInput.route = r
+        resolved = t
+        mirror(voiceInput)
+      }
+    } finally {
+      resolving = false
+    }
+  }
+  const voiceInput: Voice = {
+    kind: 'voice',
+    phase: 'listening',
+    levels: [],
+    text: '',
+    route: null,
+    transcription: transcribe(bridge, recognizer, {
+      onLevel: rms => {
+        voiceInput.levels.push(rms)
+        if (voiceInput.levels.length > LEVEL_BARS) voiceInput.levels.shift()
+      },
+      onPartial: text => {
+        voiceInput.text = text
+        mirror(voiceInput)
+        // 引けなかった理由は、確定した文字で引き直すときに出す。
+        preview().catch(() => {})
+      },
+      onStop: () => {
+        voiceInput.phase = 'finishing'
+      },
+    }),
+  }
+  mirror(voiceInput)
+  try {
+    const [, transcription] = await Promise.all([show(voiceInput), voiceInput.transcription])
+    const heard = await transcription.final
+    if (!showing(voiceInput)) return
+    if (heard === null) {
+      heardText.textContent = ''
+      return await show({ kind: 'idle' })
+    }
+    const route = heard === resolved ? voiceInput.route : heard ? await resolveRoute(heard) : null
+    if (!showing(voiceInput)) return
+    if (!route) return await show({ kind: 'idle', message: heard ? `聞き取れませんでした「${heard}」` : '聞き取れませんでした' })
+    voiceInput.phase = 'heard'
+    voiceInput.text = heard
+    voiceInput.route = route
+    mirror(voiceInput)
+    await push()
+    await new Promise(r => setTimeout(r, HEARD_MS))
+    if (showing(voiceInput)) await go(route)
+  } catch (err) {
+    if (showing(voiceInput)) await fail(err)
+  }
+}
+
+// 失敗してもフォームからは探せるので、理由を出すだけにする。
+async function prepareAsr() {
+  const set = (next: Asr) => {
+    asr = next
+    voice.textContent = voiceStatus() ?? '音声入力: グラスをタップして「東京から箱根湯本まで」のように話す'
+  }
+  set(asr)
+  try {
+    const files = await loadModel(REAZONSPEECH_K2_V2, evenStore(bridge), p => {
+      const percent = Math.floor((p.loaded / p.total) * 100)
+      if (asr.kind === 'loading' && (asr.step !== p.phase || asr.percent !== percent)) set({ kind: 'loading', step: p.phase, percent })
+    })
+    set({ kind: 'loading', step: 'create', percent: 100 })
+    const recognizer = await createRecognizer(files, [...new Set(STATIONS.flatMap(s => s.aliases))])
+    // 話している途中から駅を引くので、録音を始める前に読みの辞書を読んでおく。読めなくても、駅を引くときに読み直す。
+    await loadReading().catch(() => {})
+    set({ kind: 'ready', recognizer })
+  } catch (err) {
+    set({ kind: 'failed', reason: err instanceof Error ? err.message : String(err) })
+  }
+}
 
 async function fail(err: unknown) {
   status.textContent = String(err instanceof Error ? err.message : err)
@@ -262,9 +457,11 @@ async function search(from: Station, to: Station, cursor?: string) {
 
 await show(screen)
 tick()
+prepareAsr()
 
 form.addEventListener('submit', async e => {
   e.preventDefault()
+  if (screen.kind === 'voice') screen.transcription.then(t => t.cancel(), () => {})
   const data = new FormData(form)
   const texts = [String(data.get('from')), String(data.get('to'))]
   try {

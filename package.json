@@ -1,15 +1,17 @@
 {
   "name": "even-g2-norikae",
   "private": true,
-  "version": "0.1.15",
+  "version": "0.3.0",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "postinstall": "node -e \"const fs=require('fs'),k='node_modules/kuromoji/';fs.cpSync(k+'dict','public/kuromoji',{recursive:true});for(const f of ['NOTICE.md','LICENSE-2.0.txt'])fs.copyFileSync(k+f,'public/kuromoji/'+f)\"",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:sherpa": "bash sherpa-wasm/build.sh",
     "build:stations": "node scripts/build-stations.mjs",
-    "test": "node --test src/asr/stations.test.mjs src/progress.test.mjs",
+    "test": "node --test src/asr/stations.test.mjs src/progress.test.mjs && npm test -w even-g2-asr",
     "preview": "vite preview",
     "pack": "npm run build && evenhub pack app.json dist",
     "simulate": "evenhub-simulator http://localhost:5173"
@@ -17,6 +19,7 @@
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.16",
     "@evenrealities/pretext": "^0.1.4",
+    "even-g2-asr": "*",
     "kuromoji": "^0.1.2"
   },
   "devDependencies": {
