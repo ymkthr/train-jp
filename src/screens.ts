@@ -85,11 +85,12 @@ export function overview(j: Journey): Columns {
 export function stops(j: Journey, now: Date): Columns {
   const leg = j.legs[currentLegIndex(j, now)]
   const all: Stop[] = [leg.from, ...leg.intermediate, leg.to]
-  const nextIdx = Math.max(0, all.findIndex(s => s.time > now))
+  const found = all.findIndex(s => s.time > now)
+  const nextIdx = found === -1 ? all.length - 1 : found
   const start = Math.max(0, Math.min(nextIdx, all.length - ROWS))
   const shown = all.slice(start, start + ROWS)
   return {
-    header: fit(`${direction(leg)}  ${leg.to.name}まで あと${all.length - nextIdx}駅`, HEADER_W),
+    header: fit(`${direction(leg)}  ${leg.to.name}まで あと${found === -1 ? 0 : all.length - found}駅`, HEADER_W),
     times: shown.map(s => hhmm(s.time)).join('\n'),
     body: shown
       .map((s, k) => fit(`${start + k === nextIdx ? '▶' : '  '} ${s.name}${start + k === all.length - 1 && j.legs.at(-1) !== leg ? '  乗換' : ''}`, BODY_W))

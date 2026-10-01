@@ -3,7 +3,7 @@ import type { Station } from './asr/stations'
 const TRANSITOUS = 'https://api.transitous.org/api'
 const HEARTRAILS = 'https://express.heartrails.com/api/json'
 
-export type Stop = { name: string; time: Date }
+export type Stop = { name: string; time: Date; lat: number; lon: number }
 
 export type Leg = {
   line: string
@@ -23,7 +23,7 @@ export type Journey = {
   legs: Leg[]
 }
 
-type MotisPlace = { name: string; departure?: string; arrival?: string; scheduledDeparture?: string; scheduledArrival?: string }
+type MotisPlace = { name: string; lat: number; lon: number; departure?: string; arrival?: string; scheduledDeparture?: string; scheduledArrival?: string }
 type MotisLeg = {
   mode: string
   from: MotisPlace
@@ -69,7 +69,7 @@ function splitHeadsign(raw = ''): { kind: string; headsign: string } {
   return m ? { kind: m[1], headsign: m[2] } : { kind: '', headsign: raw }
 }
 
-const stopOf = (p: MotisPlace, t?: string): Stop => ({ name: p.name, time: new Date(t ?? p.departure ?? p.arrival ?? '') })
+const stopOf = (p: MotisPlace, t?: string): Stop => ({ name: p.name, time: new Date(t ?? p.departure ?? p.arrival ?? ''), lat: p.lat, lon: p.lon })
 
 async function toLeg(l: MotisLeg): Promise<Leg> {
   const intermediate = (l.intermediateStops ?? []).map(s => stopOf(s, s.arrival ?? s.departure))

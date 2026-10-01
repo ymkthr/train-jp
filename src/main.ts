@@ -9,9 +9,11 @@ import {
   RebuildPageContainer,
   TextContainerUpgrade,
   OsEventTypeList,
+  AppLocationAccuracy,
 } from '@evenrealities/even_hub_sdk'
 import { resolveStation, type Candidates, type Station } from './asr/stations'
 import { searchJourneys, type Journey, type JourneyPage } from './journey'
+import { ON_TIME, expected, observe, type Lag } from './progress'
 import { BODY_W, CLOCK_W, HEADER_W, LIST_W, TIME_W, clock, journeyItems, overview, route, searching, stationItem, stops, strip, type Columns } from './screens'
 
 type Route = { from: Candidates; to: Candidates }
@@ -30,6 +32,7 @@ const WAITING = 'スマホで出発駅と到着駅を入力'
 
 const bridge = await waitForEvenAppBridge()
 let screen: Screen = { kind: 'idle', message: WAITING }
+let lag: Lag = ON_TIME
 // 検索中の電車。updateImageRawData は PNG をそのまま受け取り、グラス側で 4bit グレースケールにする。
 const TRAIN = new Uint8Array(await (await fetch(new URL('train.png', document.baseURI))).arrayBuffer())
 const TRAIN_W = 288
@@ -95,11 +98,11 @@ function page(s: Screen, now: Date) {
         listObject: [list(2, 'journeys', journeyItems(s.journeys), 0, LIST_W)],
       }
     case 'strip':
-      return { containerTotalNum: 1, textObject: [text(1, 'strip', strip(s.journey, now), [0, 288 - 60, 576, 60], 1)] }
+      return { containerTotalNum: 1, textObject: [text(1, 'strip', strip(expected(s.journey, lag), now), [0, 288 - 60, 576, 60], 1)] }
     case 'overview':
       return columnsPage(overview(s.journey))
     case 'stops':
-      return columnsPage(stops(s.journey, now))
+      return columnsPage(stops(expected(s.journey, lag), now))
   }
 }
 
@@ -107,6 +110,7 @@ let started = false
 /** グラスに今出ている文字。差分だけ送るために持つ。 */
 const sent = new Map<number, string>()
 async function show(next: Screen) {
+  if ('journey' in screen && !('journey' in next)) bridge.stopAppLocationUpdates().catch(() => {})
   screen = next
   const now = new Date()
   const p = page(next, now)
@@ -127,9 +131,9 @@ function live(s: Screen, now: Date): [number, string, string][] {
   const time: [number, string, string] = [CLOCK_ID, 'clock', clock(now)]
   switch (s.kind) {
     case 'strip':
-      return [time, [1, 'strip', strip(s.journey, now)]]
+      return [time, [1, 'strip', strip(expected(s.journey, lag), now)]]
     case 'stops':
-      return [time, ...Object.entries(stops(s.journey, now)).map(([k, v], i): [number, string, string] => [i + 1, k, v])]
+      return [time, ...Object.entries(stops(expected(s.journey, lag), now)).map(([k, v], i): [number, string, string] => [i + 1, k, v])]
     case 'searching':
       return [time, [2, 'searching', searching(s.from, s.to, Math.round((now.getTime() - s.since) / 1000))]]
     default:
@@ -172,10 +176,20 @@ bridge.onEvenHubEvent(event => {
   } else if (screen.kind === 'list') {
     if (index === 0) search(screen.from, screen.to, screen.earlier)
     else if (index === screen.journeys.length + 1) search(screen.from, screen.to, screen.later)
-    else show({ kind: 'overview', journey: screen.journeys[index - 1], list: screen })
+    else {
+      lag = ON_TIME
+      // 間隔を詰めないと、30 秒ほどの停車の間に位置が届かず駅を取りこぼす。
+      // 位置を返さない環境（シミュレータ、権限の拒否）では時刻だけで進めばよいので、失敗は捨てる。
+      bridge.startAppLocationUpdates({ accuracy: AppLocationAccuracy.High, intervalMs: 5000 }).catch(() => {})
+      show({ kind: 'overview', journey: screen.journeys[index - 1], list: screen })
+    }
   } else if (screen.kind !== 'idle' && screen.kind !== 'searching') {
     show({ ...screen, kind: NEXT_ON_TAP[screen.kind] })
   }
+})
+
+bridge.onAppLocationChanged(fix => {
+  if ('journey' in screen) lag = observe(screen.journey, lag, fix, new Date())
 })
 
 const form = document.querySelector<HTMLFormElement>('#search')!
