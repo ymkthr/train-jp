@@ -87,10 +87,22 @@ async function toLeg(l: MotisLeg): Promise<Leg> {
   }
 }
 
-// 経路は駅の座標から引く。名前で geocode すると、同名の駅や表記の違う駅（西線16条 → 西線６条、松山 → 台湾の松山）を拾うことがある。
+type MotisStop = { id: string; name: string; modes?: string[] }
+
+// 駅の座標を直接渡すと、終点の座標まで歩ける時間（既定 15 分）を超える駅では、座標の近くのバス停を経由する遠回り（福岡市内の駅 → 博多 で熊本往復の高速バス）が返る。座標を停留所 ID に置き換えて駅から駅へ引く。
+async function placeOf(station: Station): Promise<string> {
+  const coord = `${station.lat},${station.lon}`
+  const stops = await getJson<MotisStop[]>(`${TRANSITOUS}/v1/reverse-geocode?place=${encodeURIComponent(coord)}&type=STOP`)
+  const trains = stops.filter(s => s.modes?.some(m => m !== 'BUS' && m !== 'COACH'))
+  const named = trains.find(s => bareName(s.name).normalize('NFKC') === station.name.normalize('NFKC'))
+  return (named ?? trains[0])?.id ?? coord
+}
+
+// 名前で geocode すると、同名の駅や表記の違う駅（西線16条 → 西線６条、松山 → 台湾の松山）を拾うことがあるので、停留所は座標から引く。
 export async function searchJourneys(from: Station, to: Station, at = new Date()): Promise<Journey[]> {
+  const [fromPlace, toPlace] = await Promise.all([placeOf(from), placeOf(to)])
   const plan = await getJson<{ itineraries: MotisItinerary[] }>(
-    `${TRANSITOUS}/v5/plan?fromPlace=${encodeURIComponent(`${from.lat},${from.lon}`)}&toPlace=${encodeURIComponent(`${to.lat},${to.lon}`)}` +
+    `${TRANSITOUS}/v5/plan?fromPlace=${encodeURIComponent(fromPlace)}&toPlace=${encodeURIComponent(toPlace)}` +
       `&time=${encodeURIComponent(at.toISOString())}&language=ja`,
   )
   return Promise.all(
