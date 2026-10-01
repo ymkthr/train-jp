@@ -73,9 +73,10 @@ const stopOf = (p: MotisPlace, t?: string): Stop => ({ name: p.name, time: new D
 
 async function toLeg(l: MotisLeg): Promise<Leg> {
   const intermediate = (l.intermediateStops ?? []).map(s => stopOf(s, s.arrival ?? s.departure))
-  const named = [l.routeLongName, l.routeShortName].find(n => n && !/^\d+$/.test(n))
-  const line = l.routeLongName || (await inferLine([l.from.name, l.to.name, ...intermediate.map(s => s.name)])) || named || ''
-  const train = !l.routeLongName && named ? named : ''
+  const line = l.routeLongName || (await inferLine([l.from.name, l.to.name, ...intermediate.map(s => s.name)]))
+  // 路線名の無い区間（Transitous の全国 JR フィードの新幹線など）は、routeShortName に「のぞみ39号」のような列車名が入る。数字だけなら ID なので出さない。
+  const short = l.routeShortName ?? ''
+  const train = !l.routeLongName && !/^\d*$/.test(short) ? short : ''
   const { kind, headsign } = splitHeadsign(l.headsign)
   return {
     line,
