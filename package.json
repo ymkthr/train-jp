@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "build:sherpa": "bash sherpa-wasm/build.sh",
     "build:stations": "node scripts/build-stations.mjs",
-    "test": "node --test src/asr/stations.test.mjs src/progress.test.mjs",
+    "test": "node --test src/asr/stations.test.mjs src/progress.test.mjs src/journey.test.mjs",
     "preview": "vite preview",
     "pack": "npm run build && evenhub pack app.json dist",
     "simulate": "evenhub-simulator http://localhost:5173"
