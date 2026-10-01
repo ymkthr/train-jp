@@ -20,7 +20,7 @@ type Screen =
   | { kind: 'list'; journeys: Journey[] }
   | { kind: 'strip' | 'overview' | 'stops'; journey: Journey; journeys: Journey[] }
 
-const NEXT_ON_TAP = { strip: 'overview', overview: 'stops', stops: 'strip' } as const
+const NEXT_ON_TAP = { overview: 'strip', strip: 'stops', stops: 'overview' } as const
 const WAITING = 'スマホで出発駅と到着駅を入力'
 
 const bridge = await waitForEvenAppBridge()
@@ -119,7 +119,7 @@ bridge.onEvenHubEvent(event => {
     if (station) go({ ...screen.route, [screen.side]: { stations: [station], sure: true } })
   } else if (screen.kind === 'list') {
     const journey = screen.journeys[index]
-    if (journey) show({ kind: 'strip', journey, journeys: screen.journeys })
+    if (journey) show({ kind: 'overview', journey, journeys: screen.journeys })
   } else if (screen.kind !== 'idle') {
     show({ ...screen, kind: NEXT_ON_TAP[screen.kind] })
   }
