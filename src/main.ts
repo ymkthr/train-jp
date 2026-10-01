@@ -289,9 +289,9 @@ const typeOf = (e?: { eventType?: OsEventTypeList }) => (e ? (e.eventType ?? OsE
 bridge.onEvenHubEvent(event => {
   const types = [typeOf(event.sysEvent), typeOf(event.textEvent), typeOf(event.listEvent)]
   if (types.includes(OsEventTypeList.DOUBLE_CLICK_EVENT)) {
-    if (screen.kind === 'pick') show({ kind: 'idle' })
+    if (screen.kind === 'pick' || screen.kind === 'list') show({ kind: 'idle' })
     else if (screen.kind === 'voice') screen.transcription.then(t => t.cancel(), () => {})
-    else if (screen.kind === 'list' || screen.kind === 'idle' || screen.kind === 'searching') bridge.shutDownPageContainer(1)
+    else if (screen.kind === 'idle' || screen.kind === 'searching') bridge.shutDownPageContainer(1)
     else if ('journey' in screen) show(screen.list)
     return
   }
