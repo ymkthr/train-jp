@@ -417,7 +417,7 @@ async function hear(recognizer: Recognizer) {
 async function prepareAsr() {
   const set = (next: Asr) => {
     asr = next
-    voice.textContent = voiceStatus() ?? '音声入力: グラスをタップして「東京から箱根湯本まで」のように話す'
+    voice.textContent = voiceStatus() ?? '音声入力: グラスをタップして「△△駅から××駅まで」と話す'
   }
   set(asr)
   try {
