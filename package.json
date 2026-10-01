@@ -1,7 +1,7 @@
 {
   "name": "even-g2-norikae",
   "private": true,
-  "version": "0.1.10",
+  "version": "0.1.11",
   "type": "module",
   "scripts": {
     "postinstall": "node -e \"const fs=require('fs'),k='node_modules/kuromoji/';fs.cpSync(k+'dict','public/kuromoji',{recursive:true});for(const f of ['NOTICE.md','LICENSE-2.0.txt'])fs.copyFileSync(k+f,'public/kuromoji/'+f)\"",

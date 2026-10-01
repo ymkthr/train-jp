@@ -87,6 +87,11 @@ async function toLeg(l: MotisLeg): Promise<Leg> {
   }
 }
 
+export type JourneyPage = { journeys: Journey[]; earlier: string; later: string }
+
+// 件数の上限を付けないと、後の時間帯のページで 50 件を超え、区間ごとの HeartRails の照会が積み上がる。
+const PAGE = 10
+
 type MotisStop = { id: string; name: string; modes?: string[] }
 
 // 駅の座標を直接渡すと、終点の座標まで歩ける時間（既定 15 分）を超える駅では、座標の近くのバス停を経由する遠回り（福岡市内の駅 → 博多 で熊本往復の高速バス）が返る。座標を停留所 ID に置き換えて駅から駅へ引く。
@@ -99,13 +104,14 @@ async function placeOf(station: Station): Promise<string> {
 }
 
 // 名前で geocode すると、同名の駅や表記の違う駅（西線16条 → 西線６条、松山 → 台湾の松山）を拾うことがあるので、停留所は座標から引く。
-export async function searchJourneys(from: Station, to: Station, at = new Date()): Promise<Journey[]> {
+export async function searchJourneys(from: Station, to: Station, cursor?: string): Promise<JourneyPage> {
   const [fromPlace, toPlace] = await Promise.all([placeOf(from), placeOf(to)])
-  const plan = await getJson<{ itineraries: MotisItinerary[] }>(
+  const plan = await getJson<{ itineraries: MotisItinerary[]; previousPageCursor: string; nextPageCursor: string }>(
     `${TRANSITOUS}/v5/plan?fromPlace=${encodeURIComponent(fromPlace)}&toPlace=${encodeURIComponent(toPlace)}` +
-      `&time=${encodeURIComponent(at.toISOString())}&language=ja`,
+      `&time=${encodeURIComponent(new Date().toISOString())}&language=ja&maxItineraries=${PAGE}` +
+      (cursor ? `&pageCursor=${encodeURIComponent(cursor)}` : ''),
   )
-  return Promise.all(
+  const journeys = await Promise.all(
     plan.itineraries.map(async it => {
       const legs = await Promise.all(it.legs.filter(l => l.mode !== 'WALK').map(toLeg))
       return {
@@ -118,4 +124,5 @@ export async function searchJourneys(from: Station, to: Station, at = new Date()
       }
     }),
   )
+  return { journeys, earlier: plan.previousPageCursor, later: plan.nextPageCursor }
 }

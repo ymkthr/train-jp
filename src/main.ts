@@ -11,17 +11,19 @@ import {
   OsEventTypeList,
 } from '@evenrealities/even_hub_sdk'
 import { resolveStation, type Candidates, type Station } from './asr/stations'
-import { searchJourneys, type Journey } from './journey'
-import { BODY_W, TIME_W, listItem, overview, searching, stationItem, stops, strip, type Columns } from './screens'
+import { searchJourneys, type Journey, type JourneyPage } from './journey'
+import { BODY_W, LIST_W, TIME_W, journeyItems, overview, route, searching, stationItem, stops, strip, type Columns } from './screens'
 
 type Route = { from: Candidates; to: Candidates }
+
+type List = { kind: 'list'; from: Station; to: Station } & JourneyPage
 
 type Screen =
   | { kind: 'idle'; message: string }
   | { kind: 'searching'; from: Station; to: Station; since: number }
   | { kind: 'pick'; side: 'from' | 'to'; route: Route }
-  | { kind: 'list'; journeys: Journey[] }
-  | { kind: 'strip' | 'overview' | 'stops'; journey: Journey; journeys: Journey[] }
+  | List
+  | { kind: 'strip' | 'overview' | 'stops'; journey: Journey; list: List }
 
 const NEXT_ON_TAP = { overview: 'strip', strip: 'stops', stops: 'overview' } as const
 const WAITING = 'スマホで出発駅と到着駅を入力'
@@ -55,9 +57,9 @@ function columnsPage(c: Columns) {
   }
 }
 
-const list = (id: number, name: string, items: string[], y = 0) =>
+const list = (id: number, name: string, items: string[], y = 0, width = 576) =>
   new ListContainerProperty({
-    xPosition: 0, yPosition: y, width: 576, height: 288 - y,
+    xPosition: 0, yPosition: y, width, height: 288 - y,
     borderWidth: 0, borderColor: 0, paddingLength: 0,
     containerID: id, containerName: name, isEventCapture: 1,
     itemContainer: new ListItemContainerProperty({ itemCount: items.length, itemWidth: 0, isItemSelectBorderEn: 1, itemName: items }),
@@ -86,7 +88,11 @@ function page(s: Screen, now: Date) {
         listObject: [list(2, 'stations', s.route[s.side].stations.map(stationItem), HEADER_H)],
       }
     case 'list':
-      return { containerTotalNum: 1, listObject: [list(1, 'journeys', s.journeys.map(listItem))] }
+      return {
+        containerTotalNum: 2,
+        textObject: [text(1, 'route', route(s.from.name, s.to.name), [LIST_W, 100, 576 - LIST_W, 100])],
+        listObject: [list(2, 'journeys', journeyItems(s.journeys), 0, LIST_W)],
+      }
     case 'strip':
       return { containerTotalNum: 1, textObject: [text(1, 'strip', strip(s.journey, now), [0, 288 - 60, 576, 60], 1)] }
     case 'overview':
@@ -130,7 +136,7 @@ bridge.onEvenHubEvent(event => {
   if (types.includes(OsEventTypeList.DOUBLE_CLICK_EVENT)) {
     if (screen.kind === 'pick') show({ kind: 'idle', message: WAITING })
     else if (screen.kind === 'list' || screen.kind === 'idle' || screen.kind === 'searching') bridge.shutDownPageContainer(1)
-    else show({ kind: 'list', journeys: screen.journeys })
+    else show(screen.list)
     return
   }
   if (!types.includes(OsEventTypeList.CLICK_EVENT)) return
@@ -139,8 +145,9 @@ bridge.onEvenHubEvent(event => {
     const station = screen.route[screen.side].stations[index]
     if (station) go({ ...screen.route, [screen.side]: { stations: [station], sure: true } })
   } else if (screen.kind === 'list') {
-    const journey = screen.journeys[index]
-    if (journey) show({ kind: 'overview', journey, journeys: screen.journeys })
+    if (index === 0) search(screen.from, screen.to, screen.earlier)
+    else if (index === screen.journeys.length + 1) search(screen.from, screen.to, screen.later)
+    else show({ kind: 'overview', journey: screen.journeys[index - 1], list: screen })
   } else if (screen.kind !== 'idle' && screen.kind !== 'searching') {
     show({ ...screen, kind: NEXT_ON_TAP[screen.kind] })
   }
@@ -165,17 +172,17 @@ async function go(route: Route) {
   await search(route.from.stations[0], route.to.stations[0])
 }
 
-async function search(from: Station, to: Station) {
+async function search(from: Station, to: Station, cursor?: string) {
   status.textContent = '検索中…'
   // 画像の転送を待たずに検索を始める。結果の画面に切り替えるのは転送が終わってから。
   const shown = show({ kind: 'searching', from, to, since: Date.now() })
   const ticking = setInterval(refresh, 1000)
   try {
-    const journeys = (await searchJourneys(from, to)).slice(0, 20)
-    if (!journeys.length) throw new Error('経路が見つかりません')
-    status.textContent = `${from.name} → ${to.name}: ${journeys.length}件`
+    const page = await searchJourneys(from, to, cursor)
+    if (!page.journeys.length) throw new Error('経路が見つかりません')
+    status.textContent = `${from.name} → ${to.name}: ${page.journeys.length}件`
     await shown
-    await show({ kind: 'list', journeys })
+    await show({ kind: 'list', from, to, ...page })
   } catch (err) {
     await shown
     await fail(err)

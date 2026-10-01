@@ -5,6 +5,7 @@ import type { Journey, Leg, Stop } from './journey'
 export const TIME_W = 64
 export const BODY_W = 576 - TIME_W
 export const ROWS = 9
+export const LIST_W = 320
 
 const hhmm = (d: Date) =>
   d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })
@@ -23,9 +24,13 @@ function direction(leg: Leg): string {
   return [leg.line, ...train].filter(Boolean).join(' ')
 }
 
-export function listItem(j: Journey): string {
-  return `${hhmm(j.departure)}→${hhmm(j.arrival)}  ${duration(j.departure, j.arrival)}  乗換${j.transfers}`
-}
+export const journeyItems = (journeys: Journey[]) => [
+  '▲ 前の時間',
+  ...journeys.map(j => `${hhmm(j.departure)}→${hhmm(j.arrival)}  ${duration(j.departure, j.arrival)}  乗換${j.transfers}`),
+  '▼ 次の時間',
+]
+
+export const route = (from: string, to: string) => [fit(from, 576 - LIST_W), '↓', fit(to, 576 - LIST_W)].join('\n')
 
 /** 駅を選ぶ画面の1行。同名・同音の駅を見分けられるよう都道府県と路線を添える。リストの項目は 64 文字まで。 */
 export const stationItem = (s: Station) => [...fit(`${s.name}（${s.pref} ${s.line}）`)].slice(0, 64).join('')
