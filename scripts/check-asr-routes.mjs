@@ -1,12 +1,12 @@
-// 「○○から××まで」の音声を public/sherpa の WASM で認識し、resolveRoute で駅の候補に戻るかを確かめる。
+// 「○○から××まで」の音声を even-g2-asr の WASM で認識し、resolveRoute で駅の候補に戻るかを確かめる。
 // 使い方:
 //   node scripts/check-asr-routes.mjs --list               音声のファイル名と読み上げる文を出す（TTS に渡す）
 //   node scripts/check-asr-routes.mjs <モデル> <音声>       モデルは tokens.txt などのあるディレクトリ、
 //                                                           音声は <出発>_<到着>.wav（16kHz mono 16bit）のあるディレクトリ
 // hotwords なしと、stations.json の全別名を hotwords にした場合の両方で認識する。
 import { readFile } from 'node:fs/promises'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createRecognizer, s16leToFloat32 } from '../src/asr/recognizer.ts'
+import { s16leToFloat32 } from 'even-g2-asr'
+import { createSherpa } from 'even-g2-asr/sherpa'
 import { STATIONS, resolveRoute } from '../src/asr/stations.ts'
 
 // 読みを確かにするため、読み上げる文はかなで書く。そのままでは hotwords にできない駅を1つずつ、主要駅と組にする。
@@ -41,8 +41,7 @@ if (process.argv[2] === '--list') {
 const [modelDir, audioDir] = process.argv.slice(2)
 if (!audioDir) throw new Error('使い方: node scripts/check-asr-routes.mjs <モデル> <音声>')
 
-// recognizer.ts はブラウザ用なので、document.baseURI と file: の fetch だけ用意して Node で動かす。
-globalThis.document = { baseURI: pathToFileURL(fileURLToPath(new URL('../public/', import.meta.url))).href }
+// WASM のグルーはブラウザ用で、WASM を fetch で読む。file: の fetch だけ用意して Node で動かす。
 const browserFetch = globalThis.fetch
 globalThis.fetch = async (url, init) =>
   String(url).startsWith('file:')
@@ -69,8 +68,8 @@ function wavSamples(buf) {
 }
 
 const hotwords = [...new Set(STATIONS.flatMap(s => s.aliases))]
-const plain = await createRecognizer(await loadModel(), [])
-const boosted = await createRecognizer(await loadModel(), hotwords)
+const plain = await createSherpa(await loadModel(), [])
+const boosted = await createSherpa(await loadModel(), hotwords)
 console.log(`hotwords ${hotwords.length} 語`)
 console.log('| 発話 | hotwords なし | 全駅 hotwords | 出発の候補 | 到着の候補 | 正誤 |')
 console.log('|---|---|---|---|---|---|')

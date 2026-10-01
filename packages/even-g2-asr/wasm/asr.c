@@ -1,12 +1,12 @@
-// sherpa-onnx の C API を、このアプリが使う形（ReazonSpeech の transducer を modified_beam_search で）に固定する薄い層。
+// sherpa-onnx の C API を、offline transducer（modeling_unit=cjkchar）を modified_beam_search で使う形に固定する薄い層。
 // 設定の構造体を JS 側で組み立てずに済むので、sherpa-onnx の版が変わっても JS を直さなくてよい。
 #include <stdlib.h>
 #include <string.h>
 
 #include "sherpa-onnx/c-api/c-api.h"
 
-const SherpaOnnxOfflineRecognizer *norikae_create(const char *encoder, const char *decoder, const char *joiner,
-                                                  const char *tokens, const char *hotwords_file, float hotwords_score) {
+const SherpaOnnxOfflineRecognizer *asr_create(const char *encoder, const char *decoder, const char *joiner,
+                                              const char *tokens, const char *hotwords_file, float hotwords_score) {
   SherpaOnnxOfflineRecognizerConfig c;
   memset(&c, 0, sizeof(c));
   c.feat_config.sample_rate = 16000;
@@ -27,7 +27,7 @@ const SherpaOnnxOfflineRecognizer *norikae_create(const char *encoder, const cha
 }
 
 // 返す文字列は呼び出し側が free する。
-char *norikae_recognize(const SherpaOnnxOfflineRecognizer *r, const float *samples, int32_t n) {
+char *asr_recognize(const SherpaOnnxOfflineRecognizer *r, const float *samples, int32_t n) {
   const SherpaOnnxOfflineStream *s = SherpaOnnxCreateOfflineStream(r);
   SherpaOnnxAcceptWaveformOffline(s, 16000, samples, n);
   SherpaOnnxDecodeOfflineStream(r, s);

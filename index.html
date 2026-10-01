@@ -20,7 +20,9 @@
         background: rgba(255,255,255,0.08); color: inherit;
       }
       button { background: #FEF991; color: #232323; font-weight: 600; }
-      #status, footer { color: #8A8A8A; font-size: 13px; }
+      #status, #voice, footer { color: #8A8A8A; font-size: 13px; }
+      #heard { font-size: 20px; white-space: pre-line; }
+      #heard:empty { display: none; }
       footer a { color: inherit; }
     </style>
   </head>
@@ -31,6 +33,8 @@
         <input name="to" placeholder="到着駅（例: 箱根湯本）" required />
         <button>検索</button>
       </form>
+      <p id="voice"></p>
+      <p id="heard"></p>
       <p id="status"></p>
       <footer>
         経路: <a href="https://transitous.org/sources/">Transitous</a>

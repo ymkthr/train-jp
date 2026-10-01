@@ -2,19 +2,28 @@
   "package_id": "com.ymkthr.norikae",
   "edition": "202601",
   "name": "乗換案内",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "min_app_version": "2.2.10",
   "min_sdk_version": "0.0.16",
   "entrypoint": "index.html",
   "permissions": [
     {
       "name": "network",
-      "desc": "経路と路線名を取得します。",
-      "whitelist": ["https://api.transitous.org", "https://express.heartrails.com"]
+      "desc": "経路と路線名を取得します。初回だけ音声認識のモデル（約170MB）を取得します。",
+      "whitelist": [
+        "https://api.transitous.org",
+        "https://express.heartrails.com",
+        "https://huggingface.co",
+        "https://us.aws.cdn.hf.co"
+      ]
     },
     {
       "name": "location",
       "desc": "乗車中に今どの駅にいるかを確かめ、遅れを表示に反映します。"
+    },
+    {
+      "name": "g2-microphone",
+      "desc": "グラスのマイクで出発駅と到着駅を聞き取ります。音声は端末の中で文字にし、外へ送りません。"
     }
   ],
   "supported_languages": ["ja"]

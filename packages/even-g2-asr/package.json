@@ -1,0 +1,18 @@
+{
+  "name": "even-g2-asr",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sherpa": "./src/sherpa.ts"
+  },
+  "scripts": {
+    "build:wasm": "bash wasm/build.sh",
+    "test": "node --test test/*.test.mjs"
+  },
+  "peerDependencies": {
+    "@evenrealities/even_hub_sdk": ">=0.0.16"
+  },
+  "license": "MIT"
+}

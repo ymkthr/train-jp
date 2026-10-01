@@ -1,10 +1,14 @@
 # even-g2-norikae
 
-Even Realities G2 で見る乗換案内。スマホで出発駅と到着駅を入れると、グラスに経路を表示する。
+Even Realities G2 で見る乗換案内。グラスをタップして「△△駅から××駅まで」と話すか、スマホで出発駅と到着駅を入れると、グラスに経路を表示する。
 
 ## 画面
 
-どの画面も右上に今の時刻を秒まで表示する（「07:05:09」）。秒の変わり目に合わせて書き換える。時刻で変わる表示（下端2行の「あと N 分」、途中駅の次の駅、検索中の秒数）も同じ時に書き換える。
+どの画面も右上に今の時刻を秒まで表示する（「07:05:09」）。秒の変わり目に合わせて書き換える。時刻で変わる表示（下端2行の「あと N 分」、途中駅の次の駅、検索中の秒数、音声認識の準備の %）も同じ時に書き換える。
+
+入力待ちの画面でタップすると、録音中の画面になる。グラスのマイクで録り、タップするか、話し終えて 1.5 秒黙るか、10 秒経つと止まる。ダブルタップで取り消して入力待ちに戻る。録音中は、左上に声の大きさで動く棒（`▁▂▃▄▅▆▇█`）と「聞いています」、真ん中に話している途中から文字（途中経過）を出し、4行に収まらなければ終わりの方を見せる。途中経過から駅が引ければ、その下に「東京 → 箱根湯本」のように出す（駅が1つに決まっていなければ「？」を付ける）。スマホにも同じ文字と駅を大きめに出す。声の棒と途中経過は 0.3 秒ごとに書き換える。音声はスマホの中で文字にし、外へ送らない。止まると「文字にしています…」、確定すると「聞き取りました」と確定の文字を 0.5 秒見せてから、検索か駅の選択に進む。駅が引けなければ「聞き取れませんでした「…」」と認識した文字を添えて入力待ちに戻る。
+
+音声認識のモデル（約 170MB）は、起動したら裏で準備する。初回だけ Hugging Face から取って Even App の保存領域に入れ、2回目からはそこから戻す。準備の最後に、駅の読みを引く kuromoji の辞書も読んでおく（途中経過から初めて駅を引くときに待たせないため）。準備の間は、入力待ちの画面とスマホに「音声認識を準備中 N%」を出し、タップすると待つように出す。準備に失敗したら理由を出す。スマホの入力はどちらの間も使える。
 
 入力待ちの画面は、右下にアプリの版を薄く出す（「v0.2.1」）。グラスに入っている版を見分けるため。`app.json` の `version` を出す。
 
@@ -20,7 +24,7 @@ Even Realities G2 で見る乗換案内。スマホで出発駅と到着駅を�
 
 降りる駅（乗換駅と終点）が次に停まる駅になり、着くまで3分を切ったら、画面の中央に枠付きの帯で「次で降ります 唐人町」「14:51着 あと3分」と、乗り換える電車（終点なら「次で到着」）を出す。時刻は上の位置から推し量ったずれを足したもの。帯は10秒で閉じ、その残りの時間を最後の行の「閉じるまで」に続く棒の長さで表す（棒だけだと駅に着くまでの時間に見えるため）。この行は知らせの中身ではないので薄く出す。帯を出している間は、帯と時刻だけを表示する（文字には背景が無く、重ねると下の画面の文字が透けるため）。タップでの画面の切り替えは帯を出したままでき、閉じると切り替えた先の画面が見える。帯は区間ごとに1回だけ出す。
 
-出発駅と到着駅が決まってから候補一覧が出るまでは、検索中の画面になる。電車の絵の下に、出発駅 → 到着駅と、検索を始めてからの秒数を表示する。秒数が進んでいれば処理は止まっていない。この画面ではタップを受け付けず、ダブルタップでアプリを終了する。
+出発駅と到着駅が決まってから候補一覧が出るまでは、検索中の画面になる。電車の絵の下に、出発駅 → 到着駅と、検索を始めてからの秒数を表示する。秒数が進んでいれば処理は止まっていない。この画面ではタップを受け付けず、ダブルタップでアプリを終了する。入力待ちの画面でダブルタップしてもアプリを終了する。
 
 ## データ
 
@@ -42,11 +46,11 @@ npm run simulate
 
 Wayland 環境でシミュレータが `Error flushing display` で落ちる場合は、`WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11` を付けて起動する。
 
-### 音声認識の WASM
+### 音声認識
 
-`public/sherpa/norikae-asr.{js,wasm}` は [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) を pthread なし・SIMD ありでビルドしたもの。Even App の WebView は `crossOriginIsolated` にならず SharedArrayBuffer を使えないため、単一スレッドで作っている。作り直すときは `npm run build:sherpa` を実行する（emsdk と sherpa-onnx を `/tmp/norikae-sherpa-build` に取ってくる。場所は `WORK=` で変えられる）。版と設定は `sherpa-wasm/build.sh` にある。
+録音・モデルの取得と保存・認識は `packages/even-g2-asr`（npm workspace）にまとめてあり、駅名のことは知らない。他の G2 アプリでも使える。使い方、app.json に足す権限と whitelist、WASM の作り直し方、容量とメモリの目安はその [README](packages/even-g2-asr/README.md) にある。
 
-モデルは [reazon-research/reazonspeech-k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2)（Apache-2.0）の `encoder-epoch-99-avg-1.int8.onnx`・`decoder-epoch-99-avg-1.onnx`・`joiner-epoch-99-avg-1.int8.onnx`・`tokens.txt` を使う。パッケージには入れず、`src/asr/recognizer.ts` の `createRecognizer` にバイト列で渡す。
+このアプリは、`src/asr/stations.json` の全駅の別名（8,627 語）を hotwords にして認識器を作る。モデルは [reazon-research/reazonspeech-k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2)（Apache-2.0）で、パッケージには入れない。
 
 ### 駅名の解決
 
@@ -66,4 +70,4 @@ Wayland 環境でシミュレータが `Error flushing display` で落ちる場�
 - 読み: [Wikidata](https://www.wikidata.org/)（CC0）の P1814（name in kana）。同名の駅は座標で見分ける。Wikidata に読みが無い駅は [日本語版 Wikipedia](https://ja.wikipedia.org/)（CC BY-SA 4.0）の記事冒頭の読み、それも無ければ kuromoji で駅名から作った読み。
 - 使える文字: reazonspeech-k2-v2 の `tokens.txt`（Apache-2.0）。
 
-実際の音声で確かめるには、`node scripts/check-asr-routes.mjs --list` が出す文を TTS で `<出発>_<到着>.wav`（16kHz mono 16bit）にして、`node scripts/check-asr-routes.mjs <モデルのディレクトリ> <音声のディレクトリ>` を実行する。public/sherpa の WASM で、hotwords なしと全駅の hotwords ありの両方で認識する。
+実際の音声で確かめるには、`node scripts/check-asr-routes.mjs --list` が出す文を TTS で `<出発>_<到着>.wav`（16kHz mono 16bit）にして、`node scripts/check-asr-routes.mjs <モデルのディレクトリ> <音声のディレクトリ>` を実行する。even-g2-asr の WASM で、hotwords なしと全駅の hotwords ありの両方で認識する。
