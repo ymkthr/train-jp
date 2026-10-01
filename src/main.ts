@@ -115,7 +115,7 @@ const voiceStatus = () =>
 
 /** 待ち受けの文字。音声認識の準備が進むと変わるので、時計と一緒に書き換える。 */
 const idleText = (message?: string) =>
-  [message, voiceStatus() ?? 'タップして「東京から箱根湯本まで」と話す', 'スマホで入力しても探せます'].filter(Boolean).join('\n')
+  [message, voiceStatus() ?? 'タップして「△△駅から××駅まで」と話す', 'スマホで入力しても検索できます'].filter(Boolean).join('\n')
 
 const MSG_BOX: [number, number, number, number] = [0, HEADER_H, 576, 288 - HEADER_H]
 
