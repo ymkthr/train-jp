@@ -11,7 +11,9 @@ import {
   OsEventTypeList,
   AppLocationAccuracy,
 } from '@evenrealities/even_hub_sdk'
+import { getTextWidth } from '@evenrealities/pretext'
 import { REAZONSPEECH_K2_V2, createRecognizer, evenStore, loadModel, transcribe, type Recognizer, type Transcription } from 'even-g2-asr'
+import { version } from '../app.json'
 import { loadReading } from './asr/reading'
 import { STATIONS, resolveRoute, resolveStation, type Candidates, type Station } from './asr/stations'
 import { searchJourneys, type Journey, type JourneyPage } from './journey'
@@ -138,8 +140,18 @@ function voiceTexts(v: Voice): [number, string, string][] {
 
 function page(s: Screen, now: Date) {
   switch (s.kind) {
-    case 'idle':
-      return { containerTotalNum: 1, textObject: [text(1, 'msg', idleText(s.message), MSG_BOX, 1)] }
+    case 'idle': {
+      // グラスに入っている版を見分けるため。Even Hub に届く版は app.json のもの。
+      const label = `v${version}`
+      const w = getTextWidth(label) + 8
+      return {
+        containerTotalNum: 2,
+        textObject: [
+          text(1, 'msg', idleText(s.message), MSG_BOX, 1),
+          new TextContainerProperty({ ...text(2, 'version', label, [576 - w, 288 - 28, w, 28]), textColor: DIM }),
+        ],
+      }
+    }
     case 'voice': {
       const [head, heard, found, hint] = voiceTexts(s)
       return {
