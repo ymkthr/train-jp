@@ -1,7 +1,7 @@
 {
   "name": "even-g2-norikae",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -11,7 +11,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "build:stations": "node scripts/build-stations.mjs",
-    "test": "node --test src/asr/stations.test.mjs src/progress.test.mjs src/journey.test.mjs && npm test -w even-g2-asr",
+    "test": "node --test src/asr/stations.test.mjs src/progress.test.mjs src/journey.test.mjs src/screens.test.mjs && npm test -w even-g2-asr",
     "preview": "vite preview",
     "pack": "npm run build && evenhub pack app.json dist",
     "simulate": "evenhub-simulator http://localhost:5173"

@@ -96,7 +96,13 @@ export function strip(j: Journey, now: Date): string {
 
 export type Columns = { header: string; times: string; body: string }
 
-export function overview(j: Journey): Columns {
+// 矢印の列。本文の右端に置き、見えていない行が上下に残っているかを示す。
+export const ARROW_W = 24
+
+export const overviewMaxTop = (j: Journey) => Math.max(0, 1 + 2 * j.legs.length - ROWS)
+
+/** 経路の全体。乗換が多いと ROWS 行に収まらないので、top 行目から見せる。 */
+export function overview(j: Journey, top: number): Columns & { more: string } {
   const times = ['']
   const body = [`◎ ${j.from}`]
   j.legs.forEach((leg, i) => {
@@ -106,10 +112,14 @@ export function overview(j: Journey): Columns {
     const next = j.legs[i + 1]
     body.push(next ? `● ${leg.to.name} 乗換${minutes(leg.to.time, next.from.time)}分` : `◎ ${leg.to.name}`)
   })
+  const more = Array<string>(ROWS).fill('')
+  if (top > 0) more[0] = '▲'
+  if (top + ROWS < body.length) more[ROWS - 1] = '▼'
   return {
     header: fit(`${j.from} → ${j.to}  ${hhmm(j.departure)}–${hhmm(j.arrival)}  ${duration(j.departure, j.arrival)}  乗換${j.transfers}回`, HEADER_W),
-    times: times.slice(0, ROWS).join('\n'),
-    body: body.slice(0, ROWS).map(l => fit(l, BODY_W)).join('\n'),
+    times: times.slice(top, top + ROWS).join('\n'),
+    body: body.slice(top, top + ROWS).map(l => fit(l, BODY_W - ARROW_W)).join('\n'),
+    more: more.join('\n'),
   }
 }
 

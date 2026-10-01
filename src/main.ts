@@ -18,7 +18,7 @@ import { loadReading } from './asr/reading'
 import { STATIONS, resolveRoute, resolveStation, type Candidates, type Station } from './asr/stations'
 import { searchJourneys, type Journey, type JourneyPage } from './journey'
 import { ON_TIME, expected, observe, type Lag } from './progress'
-import { BODY_W, CLOCK_W, HEADER_W, LEVEL_BARS, LIST_W, NOTICE_BORDER, NOTICE_H, NOTICE_MS, NOTICE_PAD, NOTICE_W, TIME_W, alighting, clock, heardRoute, journeyItems, lastLines, levelBar, notice, overview, route, routeLabel, searching, stationItem, stops, strip, type Columns } from './screens'
+import { ARROW_W, BODY_W, CLOCK_W, HEADER_W, LEVEL_BARS, LIST_W, NOTICE_BORDER, NOTICE_H, NOTICE_MS, NOTICE_PAD, NOTICE_W, TIME_W, alighting, clock, heardRoute, journeyItems, lastLines, levelBar, notice, overview, overviewMaxTop, route, routeLabel, searching, stationItem, stops, strip, type Columns } from './screens'
 
 type Route = { from: Candidates; to: Candidates }
 
@@ -44,7 +44,8 @@ type Screen =
   | { kind: 'searching'; from: Station; to: Station; since: number }
   | { kind: 'pick'; side: 'from' | 'to'; route: Route }
   | List
-  | { kind: 'strip' | 'overview' | 'stops'; journey: Journey; list: List }
+  /** top は経路の全体で一番上に見せている行。 */
+  | { kind: 'strip' | 'overview' | 'stops'; journey: Journey; list: List; top: number }
 
 /** 音声認識の準備の進み具合。モデルの復元・ダウンロードと認識器の作成は起動時に裏で進める。 */
 type Asr =
@@ -87,15 +88,17 @@ const DIM = 2
 const noticeText = (s: Screen, now: Date) =>
   'journey' in s && now.getTime() < noticed.until ? notice(expected(s.journey, lag), noticed.leg, noticed.until, now) : null
 
-function columnsPage(c: Columns) {
-  return {
-    containerTotalNum: 3,
-    textObject: [
-      text(1, 'header', c.header, [0, 0, HEADER_W, HEADER_H]),
-      text(2, 'times', c.times, [0, COL_Y, TIME_W, COL_H]),
-      text(3, 'body', c.body, [TIME_W, COL_Y, BODY_W, COL_H], 1),
-    ],
-  }
+// 5 と 6 は降りる駅の知らせ、7 は音声入力の案内に使う。
+const MORE_ID = 8
+
+function columnsPage(c: Columns & { more?: string }) {
+  const textObject = [
+    text(1, 'header', c.header, [0, 0, HEADER_W, HEADER_H]),
+    text(2, 'times', c.times, [0, COL_Y, TIME_W, COL_H]),
+    text(3, 'body', c.body, [TIME_W, COL_Y, BODY_W, COL_H], 1),
+    ...(c.more === undefined ? [] : [text(MORE_ID, 'more', c.more, [576 - ARROW_W, COL_Y, ARROW_W, COL_H])]),
+  ]
+  return { containerTotalNum: textObject.length, textObject }
 }
 
 const list = (id: number, name: string, items: string[], y = 0, width = 576) =>
@@ -191,7 +194,7 @@ function page(s: Screen, now: Date) {
     case 'strip':
       return { containerTotalNum: 1, textObject: [text(1, 'strip', strip(expected(s.journey, lag), now), [0, 288 - 60, 576, 60], 1)] }
     case 'overview':
-      return columnsPage(overview(s.journey))
+      return columnsPage(overview(s.journey, s.top))
     case 'stops':
       return columnsPage(stops(expected(s.journey, lag), now))
   }
@@ -235,6 +238,10 @@ function live(s: Screen, now: Date): [number, string, string][] {
       return [time, [1, 'strip', strip(expected(s.journey, lag), now)]]
     case 'stops':
       return [time, ...Object.entries(stops(expected(s.journey, lag), now)).map(([k, v], i): [number, string, string] => [i + 1, k, v])]
+    case 'overview': {
+      const { times, body, more } = overview(s.journey, s.top)
+      return [time, [2, 'times', times], [3, 'body', body], [MORE_ID, 'more', more]]
+    }
     case 'searching':
       return [time, [2, 'searching', searching(s.from, s.to, Math.round((now.getTime() - s.since) / 1000))]]
     case 'idle':
@@ -295,6 +302,12 @@ bridge.onEvenHubEvent(event => {
     else if ('journey' in screen) show(screen.list)
     return
   }
+  const scroll = types.includes(OsEventTypeList.SCROLL_TOP_EVENT) ? -1 : types.includes(OsEventTypeList.SCROLL_BOTTOM_EVENT) ? 1 : 0
+  if (scroll && screen.kind === 'overview') {
+    screen.top = Math.max(0, Math.min(overviewMaxTop(screen.journey), screen.top + scroll))
+    push()
+    return
+  }
   if (!types.includes(OsEventTypeList.CLICK_EVENT)) return
   const index = event.listEvent?.currentSelectItemIndex ?? 0
   if (screen.kind === 'idle') {
@@ -315,7 +328,7 @@ bridge.onEvenHubEvent(event => {
       // 間隔を詰めないと、30 秒ほどの停車の間に位置が届かず駅を取りこぼす。
       // 位置を返さない環境（シミュレータ、権限の拒否）では時刻だけで進めばよいので、失敗は捨てる。
       bridge.startAppLocationUpdates({ accuracy: AppLocationAccuracy.High, intervalMs: 5000 }).catch(() => {})
-      show({ kind: 'overview', journey: screen.journeys[index - 1], list: screen })
+      show({ kind: 'overview', journey: screen.journeys[index - 1], list: screen, top: 0 })
     }
   } else if ('journey' in screen) {
     show({ ...screen, kind: NEXT_ON_TAP[screen.kind] })
