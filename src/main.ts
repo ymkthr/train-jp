@@ -1,6 +1,8 @@
 import {
   waitForEvenAppBridge,
   TextContainerProperty,
+  ImageContainerProperty,
+  ImageRawDataUpdate,
   ListContainerProperty,
   ListItemContainerProperty,
   CreateStartUpPageContainer,
@@ -10,12 +12,13 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import { resolveStation, type Candidates, type Station } from './asr/stations'
 import { searchJourneys, type Journey } from './journey'
-import { BODY_W, TIME_W, listItem, overview, stationItem, stops, strip, type Columns } from './screens'
+import { BODY_W, TIME_W, listItem, overview, searching, stationItem, stops, strip, type Columns } from './screens'
 
 type Route = { from: Candidates; to: Candidates }
 
 type Screen =
   | { kind: 'idle'; message: string }
+  | { kind: 'searching'; from: Station; to: Station; since: number }
   | { kind: 'pick'; side: 'from' | 'to'; route: Route }
   | { kind: 'list'; journeys: Journey[] }
   | { kind: 'strip' | 'overview' | 'stops'; journey: Journey; journeys: Journey[] }
@@ -25,6 +28,10 @@ const WAITING = 'スマホで出発駅と到着駅を入力'
 
 const bridge = await waitForEvenAppBridge()
 let screen: Screen = { kind: 'idle', message: WAITING }
+// 検索中の電車。updateImageRawData は PNG をそのまま受け取り、グラス側で 4bit グレースケールにする。
+const TRAIN = new Uint8Array(await (await fetch(new URL('train.png', document.baseURI))).arrayBuffer())
+const TRAIN_W = 288
+const TRAIN_H = 144
 
 const text = (id: number, name: string, content: string, box: [number, number, number, number], capture = 0) =>
   new TextContainerProperty({
@@ -60,6 +67,18 @@ function page(s: Screen, now: Date) {
   switch (s.kind) {
     case 'idle':
       return { containerTotalNum: 1, textObject: [text(1, 'msg', s.message, [0, 0, 576, 288], 1)] }
+    case 'searching':
+      // 画像コンテナは入力を受けられないので、全面の空の文字コンテナに受けさせる。
+      return {
+        containerTotalNum: 3,
+        textObject: [
+          text(1, 'capture', ' ', [0, 0, 576, 288], 1),
+          text(2, 'searching', searching(s.from, s.to, 0), [0, 30 + TRAIN_H + 10, 576, 288 - (30 + TRAIN_H + 10)]),
+        ],
+        imageObject: [
+          new ImageContainerProperty({ xPosition: (576 - TRAIN_W) / 2, yPosition: 30, width: TRAIN_W, height: TRAIN_H, containerID: 3, containerName: 'train' }),
+        ],
+      }
     case 'pick':
       return {
         containerTotalNum: 2,
@@ -86,6 +105,7 @@ async function show(next: Screen) {
     started = true
     await bridge.createStartUpPageContainer(new CreateStartUpPageContainer(p))
   }
+  if (next.kind === 'searching') await bridge.updateImageRawData(new ImageRawDataUpdate({ containerID: 3, containerName: 'train', imageData: TRAIN }))
 }
 
 // 時刻が進むと「あと N 分」と現在の駅が変わるので、レイアウトは保ったまま文字だけ差し替える。
@@ -94,6 +114,7 @@ async function refresh() {
   const updates =
     screen.kind === 'strip' ? [[1, 'strip', strip(screen.journey, now)]]
     : screen.kind === 'stops' ? Object.entries(stops(screen.journey, now)).map(([k, v], i) => [i + 1, k, v])
+    : screen.kind === 'searching' ? [[2, 'searching', searching(screen.from, screen.to, Math.round((now.getTime() - screen.since) / 1000))]]
     : []
   for (const [containerID, containerName, content] of updates as [number, string, string][]) {
     await bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID, containerName, content }))
@@ -108,7 +129,7 @@ bridge.onEvenHubEvent(event => {
   const types = [typeOf(event.sysEvent), typeOf(event.textEvent), typeOf(event.listEvent)]
   if (types.includes(OsEventTypeList.DOUBLE_CLICK_EVENT)) {
     if (screen.kind === 'pick') show({ kind: 'idle', message: WAITING })
-    else if (screen.kind === 'list' || screen.kind === 'idle') bridge.shutDownPageContainer(1)
+    else if (screen.kind === 'list' || screen.kind === 'idle' || screen.kind === 'searching') bridge.shutDownPageContainer(1)
     else show({ kind: 'list', journeys: screen.journeys })
     return
   }
@@ -120,7 +141,7 @@ bridge.onEvenHubEvent(event => {
   } else if (screen.kind === 'list') {
     const journey = screen.journeys[index]
     if (journey) show({ kind: 'overview', journey, journeys: screen.journeys })
-  } else if (screen.kind !== 'idle') {
+  } else if (screen.kind !== 'idle' && screen.kind !== 'searching') {
     show({ ...screen, kind: NEXT_ON_TAP[screen.kind] })
   }
 })
@@ -146,13 +167,20 @@ async function go(route: Route) {
 
 async function search(from: Station, to: Station) {
   status.textContent = '検索中…'
+  // 画像の転送を待たずに検索を始める。結果の画面に切り替えるのは転送が終わってから。
+  const shown = show({ kind: 'searching', from, to, since: Date.now() })
+  const ticking = setInterval(refresh, 1000)
   try {
     const journeys = (await searchJourneys(from, to)).slice(0, 20)
     if (!journeys.length) throw new Error('経路が見つかりません')
     status.textContent = `${from.name} → ${to.name}: ${journeys.length}件`
+    await shown
     await show({ kind: 'list', journeys })
   } catch (err) {
+    await shown
     await fail(err)
+  } finally {
+    clearInterval(ticking)
   }
 }
 

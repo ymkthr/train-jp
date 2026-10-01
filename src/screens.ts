@@ -1,4 +1,4 @@
-import { pxTruncate } from '@evenrealities/pretext'
+import { getTextWidth, pxTruncate } from '@evenrealities/pretext'
 import type { Station } from './asr/stations'
 import type { Journey, Leg, Stop } from './journey'
 
@@ -29,6 +29,13 @@ export function listItem(j: Journey): string {
 
 /** 駅を選ぶ画面の1行。同名・同音の駅を見分けられるよう都道府県と路線を添える。リストの項目は 64 文字まで。 */
 export const stationItem = (s: Station) => [...fit(`${s.name}（${s.pref} ${s.line}）`)].slice(0, 64).join('')
+
+// グラスの文字は左寄せしかできないので、空白を前に詰めて中央に寄せる。
+const centered = (line: string) => ' '.repeat(Math.max(0, Math.round((576 - getTextWidth(line)) / 2 / getTextWidth(' ')))) + line
+
+/** 検索中の画面の文字。秒数が進むことで、固まっていないことを伝える。 */
+export const searching = (from: Station, to: Station, seconds: number) =>
+  [`${from.name} → ${to.name}`, `経路を検索中  ${seconds}秒`].map(l => centered(fit(l))).join('\n')
 
 export function currentLegIndex(j: Journey, now: Date): number {
   const i = j.legs.findIndex(l => l.to.time > now)
