@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ON_TIME, expected, observe } from './progress.ts'
-import { stops } from './screens.ts'
+import { alighting, notice, stops } from './screens.ts'
 
 const at = hm => new Date(`2026-10-01T${hm}:00+09:00`)
 const stop = (name, hm, lat) => ({ name, time: at(hm), lat, lon: 139.7 })
@@ -79,4 +79,41 @@ test('精度の悪い位置や古い位置は使わない', () => {
 test('終点に着いた後も ▶ は終点に残り、残りの駅数は 0 になる', () => {
   assert.equal(marked(ON_TIME, at('10:30')), 'E')
   assert.match(stops(journey, at('10:30')).header, /あと0駅/)
+})
+
+test('降りる駅の1つ手前を出て、着く3分前を過ぎたら知らせる', () => {
+  assert.equal(alighting(journey, at('10:01')), null)
+  assert.equal(alighting(journey, at('10:02')), 0)
+  assert.equal(alighting(journey, at('10:14')), null)
+  assert.equal(alighting(journey, at('10:15')), null)
+  assert.equal(alighting(journey, at('10:17')), 1)
+})
+
+test('着いた後と、乗る前は知らせない', () => {
+  assert.equal(alighting(journey, at('10:20')), null)
+  assert.equal(alighting(journey, at('10:30')), null)
+  const short = { ...journey, legs: [{ ...journey.legs[0], intermediate: [] }] }
+  assert.equal(alighting(short, at('09:59')), null)
+  assert.equal(alighting(short, at('10:01')), 0)
+})
+
+test('遅れていれば、知らせもそのぶん遅れる', () => {
+  const lag = observe(journey, ON_TIME, fix(35.03), at('10:17'))
+  assert.equal(alighting(journey, at('10:18')), 1)
+  assert.equal(alighting(expected(journey, lag), at('10:18')), null)
+  assert.equal(alighting(expected(journey, lag), at('10:19')), 1)
+})
+
+test('知らせの棒は閉じるまでの残り時間に比例して縮む', () => {
+  const until = at('10:02').getTime() + 10_000
+  const bar = now => notice(journey, 0, until, new Date(now)).closing.replace(/[^─]/g, '').length
+  const full = bar(until - 10_000)
+  assert.ok(full > 0)
+  assert.ok(Math.abs(bar(until - 5_000) - full / 2) <= 1)
+  assert.equal(bar(until), 0)
+})
+
+test('乗換では乗る電車を、終点では到着を知らせる', () => {
+  assert.match(notice(journey, 0, 0, at('10:02')).body, /次で降ります {2}C[\s\S]*乗換 乙線 10:10発/)
+  assert.match(notice(journey, 1, 0, at('10:17')).body, /次で到着 {2}E/)
 })

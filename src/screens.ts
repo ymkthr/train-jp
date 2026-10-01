@@ -97,3 +97,43 @@ export function stops(j: Journey, now: Date): Columns {
       .join('\n'),
   }
 }
+
+// 席を立って荷物を持ち、扉まで行くのに要る時間。
+const ALIGHT_NOTICE_MS = 3 * 60_000
+export const NOTICE_MS = 10_000
+export const NOTICE_W = 480
+export const NOTICE_BORDER = 2
+export const NOTICE_PAD = 10
+const NOTICE_INSET = 2 * (NOTICE_BORDER + NOTICE_PAD)
+export const NOTICE_H = 4 * 28 + NOTICE_INSET
+
+export function alighting(j: Journey, now: Date): number | null {
+  const i = currentLegIndex(j, now)
+  const leg = j.legs[i]
+  const left = leg.to.time.getTime() - now.getTime()
+  const previous = leg.intermediate.at(-1) ?? leg.from
+  return now >= previous.time && left > 0 && left <= ALIGHT_NOTICE_MS ? i : null
+}
+
+// 棒だけだと、駅に着くまでの時間に見える。
+const CLOSING = '閉じるまで '
+
+/** 降りる駅の知らせ。閉じるまでの行は薄く出すので、別の容器に入れられるよう分けて返す。棒は知らせが閉じるまでの残りの時間だけ伸びる。 */
+export function notice(j: Journey, leg: number, until: number, now: Date): { body: string; closing: string } {
+  const { to } = j.legs[leg]
+  const next = j.legs[leg + 1]
+  const left = minutes(now, to.time)
+  const width = NOTICE_W - NOTICE_INSET
+  const barW = width - getTextWidth(CLOSING)
+  const bar = '─'.repeat(Math.floor((barW * Math.max(0, until - now.getTime())) / NOTICE_MS / getTextWidth('─')))
+  return {
+    body: [
+      `次で${next ? '降ります' : '到着'}  ${to.name}`,
+      `${hhmm(to.time)}着  ${left > 0 ? `あと${left}分` : 'まもなく'}`,
+      next ? `乗換 ${next.line || direction(next)} ${hhmm(next.from.time)}発` : '',
+    ]
+      .map(l => fit(l, width))
+      .join('\n'),
+    closing: CLOSING + bar,
+  }
+}

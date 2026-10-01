@@ -1,7 +1,7 @@
 {
   "name": "even-g2-norikae",
   "private": true,
-  "version": "0.1.14",
+  "version": "0.1.15",
   "type": "module",
   "scripts": {
     "postinstall": "node -e \"const fs=require('fs'),k='node_modules/kuromoji/';fs.cpSync(k+'dict','public/kuromoji',{recursive:true});for(const f of ['NOTICE.md','LICENSE-2.0.txt'])fs.copyFileSync(k+f,'public/kuromoji/'+f)\"",
@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@evenrealities/evenhub-cli": "^0.1.12",
-    "@evenrealities/evenhub-simulator": "^0.7.2",
+    "@evenrealities/evenhub-simulator": "^0.9.5",
     "typescript": "^5.7.0",
     "vite": "^5.4.0"
   },

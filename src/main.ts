@@ -14,7 +14,7 @@ import {
 import { resolveStation, type Candidates, type Station } from './asr/stations'
 import { searchJourneys, type Journey, type JourneyPage } from './journey'
 import { ON_TIME, expected, observe, type Lag } from './progress'
-import { BODY_W, CLOCK_W, HEADER_W, LIST_W, TIME_W, clock, journeyItems, overview, route, searching, stationItem, stops, strip, type Columns } from './screens'
+import { BODY_W, CLOCK_W, HEADER_W, LIST_W, NOTICE_BORDER, NOTICE_H, NOTICE_MS, NOTICE_PAD, NOTICE_W, TIME_W, alighting, clock, journeyItems, notice, overview, route, searching, stationItem, stops, strip, type Columns } from './screens'
 
 type Route = { from: Candidates; to: Candidates }
 
@@ -33,6 +33,8 @@ const WAITING = 'スマホで出発駅と到着駅を入力'
 const bridge = await waitForEvenAppBridge()
 let screen: Screen = { kind: 'idle', message: WAITING }
 let lag: Lag = ON_TIME
+/** 最後に知らせた区間と、その知らせを閉じる時刻。区間ごとに1回だけ出す。 */
+let noticed = { leg: -1, until: 0 }
 // 検索中の電車。updateImageRawData は PNG をそのまま受け取り、グラス側で 4bit グレースケールにする。
 const TRAIN = new Uint8Array(await (await fetch(new URL('train.png', document.baseURI))).arrayBuffer())
 const TRAIN_W = 288
@@ -49,6 +51,16 @@ const HEADER_H = 30
 const COL_Y = HEADER_H
 const COL_H = 288 - HEADER_H
 const CLOCK_ID = 4
+const NOTICE_ID = 5
+const CLOSING_ID = 6
+const NOTICE_X = (576 - NOTICE_W) / 2
+const NOTICE_Y = (288 - NOTICE_H) / 2
+// 帯の枠の内側で、文言の3行の下に置く。
+const CLOSING_BOX: [number, number, number, number] = [NOTICE_X + NOTICE_BORDER + NOTICE_PAD, NOTICE_Y + NOTICE_BORDER + NOTICE_PAD + 3 * 28, NOTICE_W - 2 * (NOTICE_BORDER + NOTICE_PAD), 28]
+const DIM = 2
+
+const noticeText = (s: Screen, now: Date) =>
+  'journey' in s && now.getTime() < noticed.until ? notice(expected(s.journey, lag), noticed.leg, noticed.until, now) : null
 
 function columnsPage(c: Columns) {
   return {
@@ -114,8 +126,18 @@ async function show(next: Screen) {
   screen = next
   const now = new Date()
   const p = page(next, now)
-  const textObject = [...p.textObject, text(CLOCK_ID, 'clock', clock(now), [HEADER_W, 0, CLOCK_W, HEADER_H])]
-  const full = { ...p, containerTotalNum: p.containerTotalNum + 1, textObject }
+  const banner = noticeText(next, now)
+  // 文字の容器には背景が無く、重ねると下の文字が透ける。帯を出す間は、帯と時計だけにする。
+  const textObject = [
+    ...(banner === null
+      ? p.textObject
+      : [
+          new TextContainerProperty({ ...text(NOTICE_ID, 'notice', banner.body, [NOTICE_X, NOTICE_Y, NOTICE_W, NOTICE_H], 1), borderWidth: NOTICE_BORDER, borderColor: 15, borderRadius: 6, paddingLength: NOTICE_PAD }),
+          new TextContainerProperty({ ...text(CLOSING_ID, 'closing', banner.closing, CLOSING_BOX), textColor: DIM }),
+        ]),
+    text(CLOCK_ID, 'clock', clock(now), [HEADER_W, 0, CLOCK_W, HEADER_H]),
+  ]
+  const full = { ...p, containerTotalNum: p.containerTotalNum + textObject.length - p.textObject.length, textObject }
   sent.clear()
   for (const t of textObject) sent.set(t.containerID!, t.content!)
   if (started) await bridge.rebuildPageContainer(new RebuildPageContainer(full))
@@ -145,7 +167,17 @@ function live(s: Screen, now: Date): [number, string, string][] {
 async function tick() {
   const s = screen
   try {
-    for (const [containerID, containerName, content] of live(s, new Date())) {
+    const now = new Date()
+    if ('journey' in s) {
+      const leg = alighting(expected(s.journey, lag), now)
+      if (leg !== null && leg !== noticed.leg) noticed = { leg, until: now.getTime() + NOTICE_MS }
+    }
+    // 帯は出し始めと閉じる時に容器が変わるので、画面を組み直す。
+    const banner = noticeText(s, now)
+    if ((banner !== null) !== sent.has(NOTICE_ID)) return await show(s)
+    const updates: [number, string, string][] =
+      banner === null ? live(s, now) : [[CLOCK_ID, 'clock', clock(now)], [NOTICE_ID, 'notice', banner.body], [CLOSING_ID, 'closing', banner.closing]]
+    for (const [containerID, containerName, content] of updates) {
       // 送っている間に画面が組み直されたら、古い画面の文字を新しい画面に書かない。
       if (s !== screen) break
       if (sent.get(containerID) === content) continue
@@ -178,6 +210,7 @@ bridge.onEvenHubEvent(event => {
     else if (index === screen.journeys.length + 1) search(screen.from, screen.to, screen.later)
     else {
       lag = ON_TIME
+      noticed = { leg: -1, until: 0 }
       // 間隔を詰めないと、30 秒ほどの停車の間に位置が届かず駅を取りこぼす。
       // 位置を返さない環境（シミュレータ、権限の拒否）では時刻だけで進めばよいので、失敗は捨てる。
       bridge.startAppLocationUpdates({ accuracy: AppLocationAccuracy.High, intervalMs: 5000 }).catch(() => {})
