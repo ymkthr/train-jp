@@ -23,7 +23,19 @@ export type Journey = {
   legs: Leg[]
 }
 
-type MotisPlace = { name: string; lat: number; lon: number; departure?: string; arrival?: string; scheduledDeparture?: string; scheduledArrival?: string }
+type MotisPlace = {
+  name: string
+  stopId?: string
+  lat: number
+  lon: number
+  departure?: string
+  arrival?: string
+  scheduledDeparture?: string
+  scheduledArrival?: string
+  pickupType?: 'NORMAL' | 'NOT_ALLOWED'
+  dropoffType?: 'NORMAL' | 'NOT_ALLOWED'
+  cancelled?: boolean
+}
 type MotisLeg = {
   mode: string
   from: MotisPlace
@@ -88,6 +100,24 @@ async function toLeg(l: MotisLeg): Promise<Leg> {
   }
 }
 
+// MOTIS は出発・到着・乗り換え回数が同じ経路を区別しないので、箱崎宮前 → 名古屋 で中洲川端で乗り換えられるのに大濠公園まで乗って引き返すような経路も返す。
+// 引き返す分だけ待ち時間は元の乗り換えより長くなるので、乗り換えの時間は確かめない。降りられない駅、乗れない駅は避ける。
+function transferBeforeDetour(legs: MotisLeg[]): MotisLeg[] {
+  for (let i = 1; i < legs.length; i++) {
+    const passed = legs[i - 1].intermediateStops ?? []
+    const ahead = legs[i].intermediateStops ?? []
+    for (const [at, off] of passed.entries()) {
+      if (!off.stopId || off.dropoffType === 'NOT_ALLOWED' || off.cancelled) continue
+      const on = ahead.findIndex(q => q.stopId === off.stopId && q.pickupType !== 'NOT_ALLOWED' && !q.cancelled)
+      if (on < 0) continue
+      legs[i - 1] = { ...legs[i - 1], to: off, endTime: off.arrival!, intermediateStops: passed.slice(0, at) }
+      legs[i] = { ...legs[i], from: ahead[on], startTime: ahead[on].departure!, intermediateStops: ahead.slice(on + 1) }
+      break
+    }
+  }
+  return legs
+}
+
 export type JourneyPage = { journeys: Journey[]; earlier: string; later: string }
 
 // 件数の上限を付けないと、後の時間帯のページで 50 件を超え、区間ごとの HeartRails の照会が積み上がる。
@@ -114,7 +144,7 @@ export async function searchJourneys(from: Station, to: Station, cursor?: string
   )
   const journeys = await Promise.all(
     plan.itineraries.map(async it => {
-      const legs = await Promise.all(it.legs.filter(l => l.mode !== 'WALK').map(toLeg))
+      const legs = await Promise.all(transferBeforeDetour(it.legs.filter(l => l.mode !== 'WALK')).map(toLeg))
       return {
         from: from.name,
         to: to.name,

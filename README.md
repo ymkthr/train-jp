@@ -23,6 +23,7 @@ Even Realities G2 で見る乗換案内。スマホで出発駅と到着駅を�
 ## データ
 
 - 経路、時刻、途中駅、行先は [Transitous](https://transitous.org/) から取る。データ源は [transitous.org/sources](https://transitous.org/sources/) を参照。地図データは © OpenStreetMap contributors。駅は名前ではなく、座標の近くにある鉄道の停留所 ID で渡す（名前で geocode すると「松山」で台湾の松山、「西線16条」で西線6条を拾う。座標をそのまま渡すと、降りた駅から座標まで 15 分以内に歩けないときに、近くのバス停を経由する遠回りが返る）。
+- Transitous は出発・到着・乗り換え回数が同じなら、乗り換え駅を区別せずに経路を返す（箱崎宮前 → 名古屋 で、中洲川端で乗り換えられるのに大濠公園まで乗って引き返す）。次の電車が前の電車の通った駅を通るときは、その最初の駅で乗り換える経路に直して出す。
 - 首都圏以外の路線名は [HeartRails Express](http://express.heartrails.com/) で補う。
 - 読みの変換に [kuromoji.js](https://github.com/takuyaa/kuromoji.js)（Apache-2.0）と、同梱の辞書 mecab-ipadic-2.7.0-20070801（NAIST の著作権表示と ICOT Free Software の条件を付けて再配布できる。全文は `node_modules/kuromoji/NOTICE.md`）を使う。辞書（gzip のまま約 17MB）は `npm install` のときに `public/kuromoji` へ写し、パッケージに入れて端末内で読む。ネットには取りに行かない。`NOTICE.md` と `LICENSE-2.0.txt` も一緒に写す。
 - 番線、運賃は表示しない。無料で使えるデータ源にないため。Transitous は一部の路線（JR東日本、東京メトロなど）で遅延を反映した時刻を返すので、検索した時点の遅延は時刻に入る。検索した後の遅れは、位置から推し量るだけで取りに行かない。
