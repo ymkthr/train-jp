@@ -11,6 +11,8 @@ import {
   OsEventTypeList,
   AppLocationAccuracy,
 } from '@evenrealities/even_hub_sdk'
+import { getTextWidth } from '@evenrealities/pretext'
+import { version } from '../app.json'
 import { resolveStation, type Candidates, type Station } from './asr/stations'
 import { searchJourneys, type Journey, type JourneyPage } from './journey'
 import { ON_TIME, expected, observe, type Lag } from './progress'
@@ -83,8 +85,18 @@ const list = (id: number, name: string, items: string[], y = 0, width = 576) =>
 
 function page(s: Screen, now: Date) {
   switch (s.kind) {
-    case 'idle':
-      return { containerTotalNum: 1, textObject: [text(1, 'msg', s.message, [0, HEADER_H, 576, 288 - HEADER_H], 1)] }
+    case 'idle': {
+      // グラスに入っている版を見分けるため。Even Hub に届く版は app.json のもの。
+      const label = `v${version}`
+      const w = getTextWidth(label) + 8
+      return {
+        containerTotalNum: 2,
+        textObject: [
+          text(1, 'msg', s.message, [0, HEADER_H, 576, 288 - HEADER_H], 1),
+          new TextContainerProperty({ ...text(2, 'version', label, [576 - w, 288 - 28, w, 28]), textColor: DIM }),
+        ],
+      }
+    }
     case 'searching':
       // 画像コンテナは入力を受けられないので、全面の空の文字コンテナに受けさせる。
       return {
