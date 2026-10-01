@@ -118,7 +118,7 @@ const voiceStatus = () =>
 
 /** 待ち受けの文字。音声認識の準備が進むと変わるので、時計と一緒に書き換える。 */
 const idleText = (message?: string) =>
-  [message, voiceStatus() ?? 'タップして「△△駅から××駅まで」と話す', 'スマホで入力しても検索できます'].filter(Boolean).join('\n')
+  [message, voiceStatus() ?? 'タップして「△△駅から○○駅まで」と話す', 'スマホで入力しても検索できます'].filter(Boolean).join('\n')
 
 const MSG_BOX: [number, number, number, number] = [0, HEADER_H, 576, 288 - HEADER_H]
 
@@ -430,7 +430,7 @@ async function hear(recognizer: Recognizer) {
 async function prepareAsr() {
   const set = (next: Asr) => {
     asr = next
-    voice.textContent = voiceStatus() ?? '音声入力: グラスをタップして「△△駅から××駅まで」と話す'
+    voice.textContent = voiceStatus() ?? '音声入力: グラスをタップして「△△駅から○○駅まで」と話す'
   }
   set(asr)
   try {
