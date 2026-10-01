@@ -3,3 +3,4 @@ dist
 *.ehpk
 .env*.local
 public/kuromoji
+.DS_Store
