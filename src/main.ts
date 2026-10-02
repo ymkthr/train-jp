@@ -295,6 +295,12 @@ const typeOf = (e?: { eventType?: OsEventTypeList }) => (e ? (e.eventType ?? OsE
 
 bridge.onEvenHubEvent(event => {
   const types = [typeOf(event.sysEvent), typeOf(event.textEvent), typeOf(event.listEvent)]
+  // 帯を出している間のタップは、帯を閉じるだけにする。下の画面の操作として扱うと、見えていない画面が動く。
+  if ('journey' in screen && Date.now() < noticed.until && (types.includes(OsEventTypeList.CLICK_EVENT) || types.includes(OsEventTypeList.DOUBLE_CLICK_EVENT))) {
+    noticed = { ...noticed, until: 0 }
+    push()
+    return
+  }
   if (types.includes(OsEventTypeList.DOUBLE_CLICK_EVENT)) {
     if (screen.kind === 'pick' || screen.kind === 'list') show({ kind: 'idle' })
     else if (screen.kind === 'voice') screen.transcription.then(t => t.cancel(), () => {})
