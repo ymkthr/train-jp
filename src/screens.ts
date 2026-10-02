@@ -141,7 +141,7 @@ export function stops(j: Journey, now: Date): Columns {
 
 // 席を立って荷物を持ち、扉まで行くのに要る時間。
 const ALIGHT_NOTICE_MS = 3 * 60_000
-export const NOTICE_MS = 10_000
+export const NOTICE_MS = 30_000
 export const NOTICE_W = 480
 export const NOTICE_BORDER = 2
 export const NOTICE_PAD = 10

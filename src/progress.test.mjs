@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ON_TIME, expected, observe } from './progress.ts'
-import { alighting, notice, stops } from './screens.ts'
+import { NOTICE_MS, alighting, notice, stops } from './screens.ts'
 
 const at = hm => new Date(`2026-10-01T${hm}:00+09:00`)
 const stop = (name, hm, lat) => ({ name, time: at(hm), lat, lon: 139.7 })
@@ -105,11 +105,11 @@ test('遅れていれば、知らせもそのぶん遅れる', () => {
 })
 
 test('知らせの棒は閉じるまでの残り時間に比例して縮む', () => {
-  const until = at('10:02').getTime() + 10_000
+  const until = at('10:02').getTime() + NOTICE_MS
   const bar = now => notice(journey, 0, until, new Date(now)).closing.replace(/[^─]/g, '').length
-  const full = bar(until - 10_000)
+  const full = bar(until - NOTICE_MS)
   assert.ok(full > 0)
-  assert.ok(Math.abs(bar(until - 5_000) - full / 2) <= 1)
+  assert.ok(Math.abs(bar(until - NOTICE_MS / 2) - full / 2) <= 1)
   assert.equal(bar(until), 0)
 })
 
