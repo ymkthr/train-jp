@@ -18,7 +18,7 @@ import { loadReading } from './asr/reading'
 import { STATIONS, resolveRoute, resolveStation, type Candidates, type Station } from './asr/stations'
 import { searchJourneys, type Journey, type JourneyPage } from './journey'
 import { ON_TIME, expected, observe, type Lag } from './progress'
-import { ARROW_W, BODY_W, CLOCK_W, HEADER_W, LEVEL_BARS, LIST_W, NOTICE_BORDER, NOTICE_H, NOTICE_MS, NOTICE_PAD, NOTICE_W, TIME_W, alighting, clock, heardRoute, journeyItems, lastLines, levelBar, notice, overview, overviewMaxTop, route, routeLabel, searching, stationItem, stops, strip, type Columns } from './screens'
+import { ARROW_W, BODY_W, CLOCK_W, HEADER_W, LEVEL_BARS, LIST_W, NOTICE_BORDER, NOTICE_H, NOTICE_MS, NOTICE_PAD, NOTICE_W, TIME_W, alighting, clock, countdown, heardRoute, journeyItems, lastLines, levelBar, notice, overview, overviewMaxTop, route, routeLabel, searching, stationItem, stops, strip, type Columns, type Countdown } from './screens'
 
 type Route = { from: Candidates; to: Candidates }
 
@@ -65,6 +65,77 @@ let noticed = { leg: -1, until: 0 }
 const TRAIN = new Uint8Array(await (await fetch(new URL('train.png', document.baseURI))).arrayBuffer())
 const TRAIN_W = 288
 const TRAIN_H = 144
+
+const STRIP_H = 60
+// 文字の大きさは変えられないので、大きな数字は画像に描く。枠で情報をまとめ、下の経路表示と8px空ける。
+const COUNTDOWN_ID = 2
+const COUNTDOWN_W = 288
+const COUNTDOWN_H = 132
+const COUNTDOWN_Y = 288 - STRIP_H - COUNTDOWN_H - 8
+const COUNTDOWN_PAD_X = 8
+const COUNTDOWN_PAD_Y = 6
+
+async function countdownPng(c: Countdown) {
+  const canvas = document.createElement('canvas')
+  canvas.width = COUNTDOWN_W
+  canvas.height = COUNTDOWN_H
+  const g = canvas.getContext('2d')!
+  const cardX = COUNTDOWN_PAD_X
+  const cardY = COUNTDOWN_PAD_Y
+  const cardW = COUNTDOWN_W - 2 * COUNTDOWN_PAD_X
+  const cardH = COUNTDOWN_H - 2 * COUNTDOWN_PAD_Y
+
+  g.fillStyle = '#000'
+  g.fillRect(0, 0, COUNTDOWN_W, COUNTDOWN_H)
+  g.strokeStyle = '#666'
+  g.lineWidth = 2
+  g.beginPath()
+  g.roundRect(cardX, cardY, cardW, cardH, 6)
+  g.stroke()
+
+  g.textAlign = 'center'
+  g.textBaseline = 'alphabetic'
+  g.fillStyle = '#aaa'
+  g.font = '24px sans-serif'
+  g.fillText(c.minutes === 0 ? 'まもなく' : `${c.action}まで`, COUNTDOWN_W / 2, 35)
+  g.strokeStyle = '#444'
+  g.lineWidth = 1
+  g.beginPath()
+  g.moveTo(cardX + 16, 48)
+  g.lineTo(cardX + cardW - 16, 48)
+  g.stroke()
+
+  g.fillStyle = '#fff'
+  if (c.minutes === 0) {
+    g.font = '700 70px sans-serif'
+    g.fillText(c.action, COUNTDOWN_W / 2, 114)
+  } else {
+    const numberFontSize = 80
+    g.font = `700 ${numberFontSize}px sans-serif`
+    const number = String(c.minutes)
+    const numberWidth = g.measureText(number).width
+    g.font = '32px sans-serif'
+    const unitWidth = g.measureText('分').width
+    const left = (COUNTDOWN_W - numberWidth - 8 - unitWidth) / 2
+    g.textAlign = 'left'
+    g.font = `700 ${numberFontSize}px sans-serif`
+    g.fillText(number, left, 114)
+    g.font = '32px sans-serif'
+    g.fillText('分', left + numberWidth + 8, 114)
+  }
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => (b ? resolve(b) : reject(new Error('残り時間を描けません'))), 'image/png'))
+  return new Uint8Array(await blob.arrayBuffer())
+}
+
+/** グラスに今出ている残り時間。画像の転送は遅いので、分が変わった時だけ送る。 */
+let sentCountdown = ''
+async function sendCountdown(j: Journey, now: Date) {
+  const c = countdown(expected(j, lag), now)
+  const key = `${c.action}${c.minutes}`
+  if (key === sentCountdown) return
+  sentCountdown = key
+  await bridge.updateImageRawData(new ImageRawDataUpdate({ containerID: COUNTDOWN_ID, containerName: 'countdown', imageData: await countdownPng(c) }))
+}
 
 const text = (id: number, name: string, content: string, box: [number, number, number, number], capture = 0) =>
   new TextContainerProperty({
@@ -192,7 +263,13 @@ function page(s: Screen, now: Date) {
         listObject: [list(2, 'journeys', journeyItems(s.journeys), 0, LIST_W)],
       }
     case 'strip':
-      return { containerTotalNum: 1, textObject: [text(1, 'strip', strip(expected(s.journey, lag), now), [0, 288 - 60, 576, 60], 1)] }
+      return {
+        containerTotalNum: 2,
+        textObject: [text(1, 'strip', strip(expected(s.journey, lag), now), [0, 288 - STRIP_H, 576, STRIP_H], 1)],
+        imageObject: [
+          new ImageContainerProperty({ xPosition: 576 - COUNTDOWN_W, yPosition: COUNTDOWN_Y, width: COUNTDOWN_W, height: COUNTDOWN_H, containerID: COUNTDOWN_ID, containerName: 'countdown' }),
+        ],
+      }
     case 'overview':
       return columnsPage(overview(s.journey, s.top))
     case 'stops':
@@ -209,7 +286,7 @@ async function show(next: Screen) {
   const now = new Date()
   const p = page(next, now)
   const banner = noticeText(next, now)
-  // 文字の容器には背景が無く、重ねると下の文字が透ける。帯を出す間は、帯と時計だけにする。
+  // 文字の容器には背景が無く、重ねると下の文字が透ける。帯を出す間は、帯と時計だけにする（画像も外す）。
   const textObject = [
     ...(banner === null
       ? p.textObject
@@ -219,7 +296,7 @@ async function show(next: Screen) {
         ]),
     text(CLOCK_ID, 'clock', clock(now), [HEADER_W, 0, CLOCK_W, HEADER_H]),
   ]
-  const full = { ...p, containerTotalNum: p.containerTotalNum + textObject.length - p.textObject.length, textObject }
+  const full = banner === null ? { ...p, containerTotalNum: p.containerTotalNum + 1, textObject } : { containerTotalNum: textObject.length, textObject }
   sent.clear()
   for (const t of textObject) sent.set(t.containerID!, t.content!)
   if (started) await bridge.rebuildPageContainer(new RebuildPageContainer(full))
@@ -227,7 +304,9 @@ async function show(next: Screen) {
     started = true
     await bridge.createStartUpPageContainer(new CreateStartUpPageContainer(full))
   }
+  sentCountdown = ''
   if (next.kind === 'searching') await bridge.updateImageRawData(new ImageRawDataUpdate({ containerID: 3, containerName: 'train', imageData: TRAIN }))
+  if (next.kind === 'strip' && banner === null) await sendCountdown(next.journey, now)
 }
 
 // 時計・「あと N 分」・現在の駅・検索の秒数は時刻で変わるので、レイアウトは保ったまま文字だけ差し替える。
@@ -276,6 +355,7 @@ async function update() {
     sent.set(containerID, content)
     await bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID, containerName, content }))
   }
+  if (banner === null && s.kind === 'strip' && s === screen) await sendCountdown(s.journey, now)
 }
 
 // 声の棒と途中経過は 0.3 秒ごとに送る。BLE で無理なく送れる間隔で、途中経過が届いてから出るまでの待ちもこの程度に収まる。

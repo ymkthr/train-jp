@@ -84,12 +84,21 @@ export function currentLegIndex(j: Journey, now: Date): number {
   return i === -1 ? j.legs.length - 1 : i
 }
 
+export type Countdown = { action: '乗車' | '降車'; minutes: number }
+
+/** 下端2行の右上に大きく出す残り時間。乗る電車が出るまでは乗車まで、乗ってからは降りる駅に着くまで。 */
+export function countdown(j: Journey, now: Date): Countdown {
+  const leg = j.legs[currentLegIndex(j, now)]
+  return leg.from.time > now
+    ? { action: '乗車', minutes: minutes(now, leg.from.time) }
+    : { action: '降車', minutes: Math.max(0, minutes(now, leg.to.time)) }
+}
+
 export function strip(j: Journey, now: Date): string {
   const i = currentLegIndex(j, now)
   const leg = j.legs[i]
   const next = j.legs[i + 1]
-  const untilDep = minutes(now, leg.from.time)
-  const status = untilDep >= 0 ? `${hhmm(leg.from.time)}発(あと${untilDep}分)` : `乗車中 あと${Math.max(0, minutes(now, leg.to.time))}分`
+  const status = leg.from.time > now ? `${hhmm(leg.from.time)}発` : '乗車中'
   const tail = next ? `→ ${next.line || direction(next)} ${hhmm(next.from.time)}発` : '到着'
   return [fit(`▶ ${leg.from.name} ${direction(leg)} ${status}`), fit(`  ${leg.to.name} ${hhmm(leg.to.time)}着 ${tail}`)].join('\n')
 }
