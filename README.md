@@ -1,4 +1,4 @@
-# even-g2-norikae
+# Train JP
 
 Even Realities G2 で見る乗換案内。グラスをタップして「△△駅から○○駅まで」と話すか、スマホで出発駅と到着駅を入れると、グラスに経路を表示する。
 
@@ -54,7 +54,7 @@ Wayland 環境でシミュレータが `Error flushing display` で落ちる場�
 
 ### 駅名の解決
 
-`src/asr/stations.json` は駅の一覧。駅名（`name`）、都道府県（`pref`）、路線の1つ（`line`）、座標（`lat`・`lon`）、読み（`kana`）、hotwords に登録する表記（`aliases`）を持つ。HeartRails が路線ごとに返す行を、同じ名前で 3km 以内なら1駅にまとめ、離れた同名の駅（高松の香川県・東京都・石川県）は別の駅にする。路線の多い駅から順に並べ、候補もこの順に出す。作り直すときは `npm run build:stations` を実行する。取ってきたデータは `/tmp/norikae-stations` に置いて次から使う（場所は `WORK=` で変えられる。消すと取り直す）。
+`src/asr/stations.json` は駅の一覧。駅名（`name`）、都道府県（`pref`）、路線の1つ（`line`）、座標（`lat`・`lon`）、読み（`kana`）、hotwords に登録する表記（`aliases`）を持つ。HeartRails が路線ごとに返す行を、同じ名前で 3km 以内なら1駅にまとめ、離れた同名の駅（高松の香川県・東京都・石川県）は別の駅にする。路線の多い駅から順に並べ、候補もこの順に出す。作り直すときは `npm run build:stations` を実行する。取ってきたデータは `/tmp/train-jp-stations` に置いて次から使う（場所は `WORK=` で変えられる。消すと取り直す）。
 
 `src/asr/stations.ts` の `resolveStation`（駅名1つ）と `resolveRoute`（「○○から××まで」）は、音声認識の結果もスマホで入力した駅名も同じ手順で駅の候補にする（`npm test` で確かめる）。前後の「えっと」「駅まで」「お願い」などは無視する。
 

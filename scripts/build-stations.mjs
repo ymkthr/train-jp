@@ -1,14 +1,14 @@
 // src/asr/stations.json を作る。駅名・都道府県・路線・座標は HeartRails Express、読みは Wikidata（CC0）、Wikidata に無ければ
 // 日本語版 Wikipedia、それも無ければ kuromoji で駅名から作る。使える文字はモデルの tokens.txt から。
-// 使い方: npm run build:stations   （取ってきたデータは WORK、既定は /tmp/norikae-stations に置いて次から使う。消すと取り直す）
+// 使い方: npm run build:stations   （取ってきたデータは WORK、既定は /tmp/train-jp-stations に置いて次から使う。消すと取り直す）
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { LETTERS, hiragana, reading } from '../src/asr/reading.ts'
 
-const WORK = process.env.WORK ?? '/tmp/norikae-stations'
+const WORK = process.env.WORK ?? '/tmp/train-jp-stations'
 const OUT = new URL('../src/asr/stations.json', import.meta.url)
 const HEARTRAILS = 'https://express.heartrails.com/api/json'
 const TOKENS = 'https://huggingface.co/reazon-research/reazonspeech-k2-v2/resolve/main/tokens.txt'
-const UA = { 'User-Agent': 'even-g2-norikae-build (https://github.com/ymkthr/even-g2-norikae)' }
+const UA = { 'User-Agent': 'train-jp-build (https://github.com/ymkthr/train-jp)' }
 
 async function cached(file, get) {
   const path = `${WORK}/${file}`

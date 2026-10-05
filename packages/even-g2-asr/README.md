@@ -55,7 +55,7 @@ hotwords は tokens.txt にある文字だけで書いた語にする。無い�
 
 ## 導入
 
-このリポジトリでは npm workspace で使っている。他のアプリでは `packages/even-g2-asr` を写すか、`"even-g2-asr": "file:../even-g2-norikae/packages/even-g2-asr"` のように依存に入れる。TypeScript のソースのまま配るので、Vite などの bundler で読む。`@evenrealities/even_hub_sdk` は使う側のものを使う（peerDependencies）。
+このリポジトリでは npm workspace で使っている。他のアプリでは `packages/even-g2-asr` を写すか、`"even-g2-asr": "file:../train-jp/packages/even-g2-asr"` のように依存に入れる。TypeScript のソースのまま配るので、Vite などの bundler で読む。`@evenrealities/even_hub_sdk` は使う側のものを使う（peerDependencies）。
 
 ### app.json
 
