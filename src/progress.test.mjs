@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ON_TIME, expected, observe } from './progress.ts'
-import { NOTICE_MS, alighting, notice, stops } from './screens.ts'
+import { NOTICE_MS, alighting, countdown, notice, stops } from './screens.ts'
 
 const at = hm => new Date(`2026-10-01T${hm}:00+09:00`)
 const stop = (name, hm, lat) => ({ name, time: at(hm), lat, lon: 139.7 })
@@ -38,6 +38,13 @@ test('遅れて駅に着いたら、その遅れのぶん次の駅への移り�
 test('早く駅に着いたら、時刻表より先に次の駅へ進む', () => {
   const lag = observe(journey, ON_TIME, fix(35.01), at('10:01'))
   assert.equal(marked(lag, at('10:01')), 'C')
+})
+
+test('残り時間は、乗るまでは乗車まで、乗ってからは降りる駅に着くまでを数え、乗換の待ちでは次の電車の乗車までに戻る', () => {
+  assert.deepEqual(countdown(journey, at('09:55')), { action: '乗車', minutes: 5 })
+  assert.deepEqual(countdown(journey, at('10:01')), { action: '降車', minutes: 3 })
+  assert.deepEqual(countdown(journey, at('10:06')), { action: '乗車', minutes: 4 })
+  assert.deepEqual(countdown(journey, at('10:25')), { action: '降車', minutes: 0 })
 })
 
 test('同じ駅に居続けても遅れは膨らまない', () => {
