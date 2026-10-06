@@ -36,7 +36,7 @@ Train JP は、Even Realities G2 で使う日本の電車の乗換案内アプ�
 
 <table>
   <tr>
-    <td align="center"><strong>下端2行</strong><br><img src="docs/screenshots/7-strip.png" width="100%" alt="下端2行"></td>
+    <td align="center"><strong>乗降車時間</strong><br><img src="docs/screenshots/7-strip.png" width="100%" alt="乗降車時間"></td>
     <td align="center"><strong>途中駅</strong><br><img src="docs/screenshots/8-stops.png" width="100%" alt="途中駅"></td>
   </tr>
   <tr>
